@@ -65,6 +65,10 @@ void CpuFill(void *dest, void *value, s32 size)
 
 void VBlank_CB(void)
 {
+#ifdef PORT
+    /* Port: stop the HBlank DMA of the previous frame (port/host_dma.c). */
+    HostDmaSet(0, 0, 0, 0);
+#else
     // Looks like a macro?
     u16 cnt = REG_DMA0CNT_H;
     cnt |= DMA_ENABLE;
@@ -75,6 +79,7 @@ void VBlank_CB(void)
     asm("mov \tr8, r8");
     asm("mov \tr8, r8");
     REG_DMA0CNT_H = cnt & ~(DMA_ENABLE);
+#endif
 
     REG_WININ = WININ_WIN0_ALL | WININ_WIN1_ALL;
     REG_WINOUT = WINOUT_WIN01_OBJ | WINOUT_WIN01_CLR | WINOUT_WIN01_BG3 | WINOUT_WIN01_BG2 | WINOUT_WIN01_BG0;

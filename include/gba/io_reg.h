@@ -1,7 +1,15 @@
 #ifndef GUARD_GBA_IO_REG_H
 #define GUARD_GBA_IO_REG_H
 
+#ifdef PORT
+/* Host / PS Vita port: the I/O registers live in a host array (port/port.h). */
+#include <stdint.h>
+extern unsigned char gHostIo[];
+void *HostVcountPtr(void);
+#define REG_BASE ((uintptr_t)gHostIo)
+#else
 #define REG_BASE 0x4000000 // I/O register base address
+#endif
 
 // I/O register offsets
 
@@ -349,7 +357,11 @@
 
 #define REG_DISPCNT     (*(vu16 *)REG_ADDR_DISPCNT)
 #define REG_DISPSTAT    (*(vu16 *)REG_ADDR_DISPSTAT)
+#ifdef PORT
+#define REG_VCOUNT      (*(vu16 *)HostVcountPtr())
+#else
 #define REG_VCOUNT      (*(vu16 *)REG_ADDR_VCOUNT)
+#endif
 #define REG_BG0CNT      (*(vu16 *)REG_ADDR_BG0CNT)
 #define REG_BG1CNT      (*(vu16 *)REG_ADDR_BG1CNT)
 #define REG_BG2CNT      (*(vu16 *)REG_ADDR_BG2CNT)

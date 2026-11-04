@@ -1,4 +1,7 @@
 #include "global.h"
+#ifdef PORT
+void HostSyscall(int num);
+#endif
 #include "globaldata.h"
 #include "bg_control.h"
 #include "code_800D090.h"
@@ -360,7 +363,11 @@ UNUSED static void sub_800BB44(void)
     REG_IME = 1;
 
     SoundBiasReset();
+#ifdef PORT
+    HostSyscall(3);
+#else
     asm("swi 0x3");
+#endif
     SoundBiasSet();
 
     REG_IME = 0;

@@ -2,6 +2,16 @@
 #include "m4a.h"
 #include "gba/m4a_internal.h"
 
+#ifdef PORT
+/* PORT: the engine core (SoundMain/SoundMainRAM, MPlayMain, ply_*, ...) is
+ * the C translation of src/m4a_1.s (tools/port/asm2c.py); it is called like
+ * the original, there is no IWRAM copy.  The engine reads SOUND_INFO_PTR from
+ * IWRAM 0x03007FF0, which lives in the host array gHostIwram. */
+extern unsigned char gHostIwram[];
+#undef SOUND_INFO_PTR
+#define SOUND_INFO_PTR (*(struct SoundInfo **)(gHostIwram + 0x7FF0))
+#endif
+
 extern const u8 gCgb3Vol[];
 
 IWRAM_DATA ALIGNED(4) char SoundMainRAM_Buffer[0x400] = {0};
@@ -71,7 +81,9 @@ void m4aSoundInit(void)
 {
     s32 i;
 
+#ifndef PORT /* PORT: SoundMainRAM is translated C, SoundMain reaches it directly */
     CpuCopy32((void *)((s32)SoundMainRAM & ~1), SoundMainRAM_Buffer, sizeof(SoundMainRAM_Buffer));
+#endif
 
     SoundInit(&gSoundInfo);
     MPlayExtender(gCgbChans);
@@ -311,7 +323,9 @@ void MPlayExtender(struct CgbChannel *cgbChans)
 
 void MusicPlayerJumpTableCopy(void)
 {
+#ifndef PORT /* PORT: BIOS call, unused by the game */
     asm("swi 0x2A");
+#endif
 }
 
 void ClearChain(void *x)
@@ -404,11 +418,13 @@ void SampleFreqSet(u32 freq)
 
     m4aSoundVSyncOn();
 
+#ifndef PORT /* PORT: no LCD to wait for */
     while (*(vu8 *)REG_ADDR_VCOUNT == 159)
         ;
 
     while (*(vu8 *)REG_ADDR_VCOUNT != 159)
         ;
+#endif
 
     REG_TM0CNT_H = TIMER_ENABLE | TIMER_1CLK;
 }

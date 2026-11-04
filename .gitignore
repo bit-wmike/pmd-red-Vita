@@ -46,3 +46,8 @@ __pycache__/
 .cache
 build-cmake-*
 compile_commands.json
+
+# port build
+build/
+platform/vita/sce_sys_local/
+host_out/

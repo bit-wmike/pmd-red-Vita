@@ -1,0 +1,712 @@
+/*
+ * PS Vita platform layer of the Pokémon Mystery Dungeon: Red Rescue Team port.
+ *
+ * Video: vita2d, the frame scaled to the full screen height; styles smooth,
+ *        sharp (integer pre-scale, then smooth down-scale) and pixel (integer).
+ * Menu:  START + SELECT (view, display, frame rate, controls, quick save,
+ *        cheats), saved to settings.ini.
+ * Audio: a thread feeding sceAudioOut from a ring buffer (48 kHz stereo).
+ * Input: buttons and left stick mapped to the GBA keys.
+ * Files: ux0:data/pmd/ - the ROM (any *.gba of the US version), the save
+ *        (pmd_red.sav, 128 KiB, compatible with GBA emulators), settings,
+ *        quick save, the ROM index and log.txt.
+ */
+#include <psp2/apputil.h>
+#include <psp2/audioout.h>
+#include <psp2/ctrl.h>
+#include <psp2/display.h>
+#include <psp2/touch.h>
+#include <psp2/io/dirent.h>
+#include <psp2/io/fcntl.h>
+#include <psp2/io/stat.h>
+#include <psp2/kernel/processmgr.h>
+#include <psp2/kernel/threadmgr.h>
+#include <psp2/power.h>
+#include <psp2/system_param.h>
+#include <stdarg.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <vita2d.h>
+
+#include <pthread.h>
+#include <sched.h>
+
+#include "port/port.h"
+#include "port/port_view.h"
+#include "port/port_config.h"
+#include "port/port_game.h"
+#include "cpu/mode1.h"
+
+#define DATA_DIR "ux0:data/pmd"
+#define SAVE_PATH DATA_DIR "/pmd_red.sav"
+#define LOG_PATH DATA_DIR "/log.txt"
+
+#define KEY_A 1
+#define KEY_B 2
+#define KEY_SELECT 4
+#define KEY_START 8
+#define KEY_RIGHT 0x10
+#define KEY_LEFT 0x20
+#define KEY_UP 0x40
+#define KEY_DOWN 0x80
+#define KEY_R 0x100
+#define KEY_L 0x200
+
+unsigned int sceUserMainThreadStackSize = 1 * 1024 * 1024;
+int _newlib_heap_size_user = 160 * 1024 * 1024;
+
+/* ---------------------------------------------------------------- log */
+
+static FILE *sLog;
+
+uint64_t Platform_TimeUs(void)
+{
+    return sceKernelGetProcessTimeWide();
+}
+
+void Platform_Log(const char *fmt, ...)
+{
+    va_list ap;
+    if (!sLog)
+        return;
+    va_start(ap, fmt);
+    vfprintf(sLog, fmt, ap);
+    va_end(ap);
+    fflush(sLog);
+}
+
+/* -------------------------------------------------------------- video */
+
+static vita2d_texture *sTex;
+static vita2d_texture *sSharp;
+static vita2d_pgf *sFont;
+
+#define SHARP_K 3
+
+static void VideoInit(void)
+{
+    vita2d_init();
+    vita2d_set_clear_color(RGBA8(0, 0, 0, 255));
+    vita2d_set_vblank_wait(0); /* paced by WaitDue() */
+    sTex = vita2d_create_empty_texture_format(PORT_VIEW_MAX_W, PORT_VIEW_MAX_H, SCE_GXM_TEXTURE_FORMAT_U8U8U8U8_ABGR);
+    sSharp = vita2d_create_empty_texture_rendertarget(PORT_VIEW_MAX_W * SHARP_K, PORT_VIEW_MAX_H * SHARP_K,
+                                                       SCE_GXM_TEXTURE_FORMAT_A8B8G8R8);
+    sFont = vita2d_load_default_pgf();
+}
+
+static int sCatchup; /* frames computed but not drawn (pacing) */
+
+/* Frame timing for the log: work time = game logic + rendering of a frame. */
+static SceUInt64 sLastPresentEnd;
+static SceUInt64 sWorkSum, sWorkMax;
+static int sWorkFrames, sSlowFrames;
+
+static void PerfFrame(SceUInt64 start)
+{
+    if (sLastPresentEnd) {
+        SceUInt64 work = start - sLastPresentEnd;
+        sWorkSum += work;
+        if (work > sWorkMax)
+            sWorkMax = work;
+        if (work > 16000)
+            sSlowFrames++;
+        if (++sWorkFrames == 300) {
+            Platform_Log("[perf] frame work avg %.2f ms (render %.2f ms), max %.2f ms, >16 ms: %d of 300, "
+                         "view %dx%d, catchup %d, render threads %d\n",
+                         sWorkSum / 300.0 / 1000.0, Port_ProfileAverageUs(PORT_PROF_RENDER) / 1000.0,
+                         sWorkMax / 1000.0, sSlowFrames, Port_ViewWidth(), Port_ViewHeight(), sCatchup,
+                         1 + virtuappu_mode1_worker_count());
+            sCatchup = 0;
+            sWorkSum = sWorkMax = 0;
+            sWorkFrames = sSlowFrames = 0;
+        }
+    }
+}
+
+/* Frame pacing: logic frame n is due at display vblank sAnchorVcount + n.
+ * When the game runs late, frames are computed without drawing (at most two
+ * in a row) so the game keeps its speed; after a long stall (loading, menu)
+ * the schedule is re-anchored instead of catching up. */
+static unsigned sAnchorVcount, sAnchorFrame;
+static int sAnchored, sSkipRun;
+
+static int FrameLate(void)
+{
+    unsigned due = sAnchorVcount + (Port_FrameCounter() - sAnchorFrame);
+    return (int)(sceDisplayGetVcount() - due);
+}
+
+static void Reanchor(void)
+{
+    sAnchorVcount = sceDisplayGetVcount();
+    sAnchorFrame = Port_FrameCounter();
+    sAnchored = 1;
+}
+
+int Platform_PaceAllowsRender(void)
+{
+    int late;
+    if (Port_TurboActive()) {
+        /* fast forward: draw every fourth frame, never wait */
+        sAnchored = 0;
+        return (Port_FrameCounter() & 3) == 0;
+    }
+    if (!sAnchored)
+        Reanchor();
+    late = FrameLate();
+    if (late > 8) {
+        Reanchor();
+        late = 0;
+    }
+    if (late >= (gPortConfig.frameRate30 ? 3 : 2) && sSkipRun < 2) {
+        sSkipRun++;
+        sCatchup++;
+        return 0;
+    }
+    sSkipRun = 0;
+    return 1;
+}
+
+static void WaitDue(void)
+{
+    if (Port_TurboActive())
+        return;
+    while (FrameLate() < 0)
+        sceDisplayWaitVblankStart();
+}
+
+static int sLastW = 240, sLastH = 160, sLastZoom = 160;
+
+static void DrawGame(void)
+{
+    int width = sLastW, height = sLastH;
+    float scale = 544.0f / sLastZoom;
+    float dx, dy;
+
+    if (gPortConfig.displayStyle == PORT_STYLE_PIXEL) {
+        int k = 544 / sLastZoom;
+        scale = (float)(k < 1 ? 1 : k);
+    }
+    dx = (float)(int)((960.0f - width * scale) / 2.0f);
+    dy = (float)(int)((544.0f - height * scale) / 2.0f);
+
+    if (gPortConfig.displayStyle == PORT_STYLE_SHARP) {
+        /* nearest-neighbour to 3x, then a smooth scale to the screen */
+        vita2d_start_drawing_advanced(sSharp, SCE_GXM_SCENE_FRAGMENT_SET_DEPENDENCY);
+        vita2d_texture_set_filters(sTex, SCE_GXM_TEXTURE_FILTER_POINT, SCE_GXM_TEXTURE_FILTER_POINT);
+        vita2d_draw_texture_part_scale(sTex, 0, 0, 0, 0, (float)width, (float)height, (float)SHARP_K, (float)SHARP_K);
+        vita2d_end_drawing();
+        vita2d_start_drawing_advanced(NULL, SCE_GXM_SCENE_VERTEX_WAIT_FOR_DEPENDENCY);
+        vita2d_clear_screen();
+        vita2d_texture_set_filters(sSharp, SCE_GXM_TEXTURE_FILTER_LINEAR, SCE_GXM_TEXTURE_FILTER_LINEAR);
+        vita2d_draw_texture_part_scale(sSharp, dx, dy, 0, 0, (float)(width * SHARP_K), (float)(height * SHARP_K),
+                                       scale / SHARP_K, scale / SHARP_K);
+    } else {
+        SceGxmTextureFilter f = gPortConfig.displayStyle == PORT_STYLE_SMOOTH ? SCE_GXM_TEXTURE_FILTER_LINEAR
+                                                                               : SCE_GXM_TEXTURE_FILTER_POINT;
+        vita2d_start_drawing();
+        vita2d_clear_screen();
+        vita2d_texture_set_filters(sTex, f, f);
+        vita2d_draw_texture_part_scale(sTex, dx, dy, 0, 0, (float)width, (float)height, scale, scale);
+    }
+}
+
+static void DrawToast(void)
+{
+    const char *msg = Port_CurrentMessage();
+    if (!msg)
+        return;
+    vita2d_draw_rectangle(0, 500, 960, 44, RGBA8(0, 0, 0, 170));
+    vita2d_pgf_draw_text(sFont, 20, 530, RGBA8(255, 255, 255, 255), 1.0f, msg);
+}
+
+void Platform_Present(const uint32_t *pixels, int width, int height, int pitch, int zoomHeight)
+{
+    uint8_t *dst;
+    unsigned stride;
+    int y;
+
+    PerfFrame(sceKernelGetProcessTimeWide());
+    vita2d_wait_rendering_done();
+    dst = (uint8_t *)vita2d_texture_get_datap(sTex);
+    stride = vita2d_texture_get_stride(sTex);
+    for (y = 0; y < height; y++)
+        memcpy(dst + y * stride, pixels + y * pitch, (size_t)width * 4);
+    sLastW = width;
+    sLastH = height;
+    sLastZoom = zoomHeight;
+
+    vita2d_pool_reset();
+    DrawGame();
+    DrawToast();
+    vita2d_end_drawing();
+    WaitDue();
+    vita2d_swap_buffers();
+    sLastPresentEnd = sceKernelGetProcessTimeWide();
+}
+
+static void ShowMessage(const char *title, const char *text)
+{
+    for (;;) {
+        SceCtrlData pad;
+        vita2d_start_drawing();
+        vita2d_clear_screen();
+        vita2d_pgf_draw_text(sFont, 40, 80, RGBA8(255, 120, 60, 255), 1.4f, title);
+        vita2d_pgf_draw_text(sFont, 40, 140, RGBA8(230, 230, 230, 255), 1.0f, text);
+        vita2d_pgf_draw_text(sFont, 40, 500, RGBA8(150, 150, 150, 255), 0.9f, "START: beenden / quit");
+        vita2d_end_drawing();
+        vita2d_swap_buffers();
+        sceCtrlPeekBufferPositive(0, &pad, 1);
+        if (pad.buttons & SCE_CTRL_START)
+            break;
+    }
+}
+
+static void ShowProgress(const char *text)
+{
+    vita2d_start_drawing();
+    vita2d_clear_screen();
+    vita2d_pgf_draw_text(sFont, 40, 80, RGBA8(255, 200, 80, 255), 1.4f, "Mystery Dungeon Vita " PMD_PORT_VERSION);
+    vita2d_pgf_draw_text(sFont, 40, 140, RGBA8(230, 230, 230, 255), 1.0f, text);
+    vita2d_end_drawing();
+    vita2d_swap_buffers();
+}
+
+/* -------------------------------------------------------------- audio */
+
+#define AUDIO_GRAIN 256
+#define RING_FRAMES 8192 /* stereo frames, power of two */
+
+static int16_t sRing[RING_FRAMES * 2];
+static volatile uint32_t sRingWrite, sRingRead;
+static int sAudioPort = -1;
+static int16_t sHoldL, sHoldR;
+
+void Platform_SubmitAudio(const int16_t *samples, int frames)
+{
+    int i;
+    uint32_t w = sRingWrite;
+    if (Port_TurboActive())
+        return; /* fast forward: no sound */
+    for (i = 0; i < frames; i++) {
+        if (w - sRingRead >= RING_FRAMES - 1)
+            break; /* full: drop the rest */
+        sRing[(w & (RING_FRAMES - 1)) * 2] = samples[i * 2];
+        sRing[(w & (RING_FRAMES - 1)) * 2 + 1] = samples[i * 2 + 1];
+        w++;
+    }
+    sRingWrite = w;
+}
+
+static int AudioThread(SceSize args, void *argp)
+{
+    static int16_t buf[AUDIO_GRAIN * 2];
+    (void)args; (void)argp;
+    for (;;) {
+        uint32_t r = sRingRead;
+        int i;
+        for (i = 0; i < AUDIO_GRAIN; i++) {
+            if (r == sRingWrite) {
+                /* underrun: hold the last sample (no click) */
+                buf[i * 2] = i ? buf[i * 2 - 2] : sHoldL;
+                buf[i * 2 + 1] = i ? buf[i * 2 - 1] : sHoldR;
+            } else {
+                buf[i * 2] = sRing[(r & (RING_FRAMES - 1)) * 2];
+                buf[i * 2 + 1] = sRing[(r & (RING_FRAMES - 1)) * 2 + 1];
+                r++;
+            }
+        }
+        sRingRead = r;
+        sHoldL = buf[AUDIO_GRAIN * 2 - 2];
+        sHoldR = buf[AUDIO_GRAIN * 2 - 1];
+        sceAudioOutOutput(sAudioPort, buf);
+    }
+    return 0;
+}
+
+static void AudioInit(void)
+{
+    SceUID th;
+    sAudioPort = sceAudioOutOpenPort(SCE_AUDIO_OUT_PORT_TYPE_BGM, AUDIO_GRAIN, PORT_AUDIO_RATE,
+                                     SCE_AUDIO_OUT_MODE_STEREO);
+    if (sAudioPort < 0) {
+        Platform_Log("audio: open port failed 0x%08x\n", sAudioPort);
+        return;
+    }
+    {
+        int vol[2] = {SCE_AUDIO_VOLUME_0DB, SCE_AUDIO_VOLUME_0DB};
+        sceAudioOutSetVolume(sAudioPort, SCE_AUDIO_VOLUME_FLAG_L_CH | SCE_AUDIO_VOLUME_FLAG_R_CH, vol);
+    }
+    th = sceKernelCreateThread("pmd_audio", AudioThread, 0x10000100, 0x10000, 0, 0, NULL);
+    if (th >= 0)
+        sceKernelStartThread(th, 0, NULL);
+}
+
+/* -------------------------------------------------------------- input */
+
+/* ---- menu (START + SELECT) ---- */
+
+enum { MI_VIEW, MI_STYLE, MI_FPS, MI_TURBO, MI_REAR, MI_QSAVE, MI_QLOAD, MI_CH_HP, MI_CH_BELLY, MI_CH_MONEY,
+       MI_BACK, MI_COUNT };
+
+static const char *OnOff(int v)
+{
+    return v ? "an" : "aus";
+}
+
+static void MenuLine(int item, char *buf, size_t size)
+{
+    static const char *views[] = {"GBA (240x160)", "Breitbild (282x160)", "Weitsicht (400x240)"};
+    static const char *styles[] = {"Weich", "Scharf", "Pixelgenau"};
+    switch (item) {
+        case MI_VIEW: snprintf(buf, size, "Ansicht: %s", views[gPortConfig.viewMode]); break;
+        case MI_STYLE: snprintf(buf, size, "Bilddarstellung: %s", styles[gPortConfig.displayStyle]); break;
+        case MI_FPS: snprintf(buf, size, "Bildrate: %s", gPortConfig.frameRate30 ? "30 (Spieltempo bleibt)" : "60"); break;
+        case MI_TURBO: snprintf(buf, size, "Dreieck halten = Schnellvorlauf: %s", OnOff(gPortConfig.turbo)); break;
+        case MI_REAR: snprintf(buf, size, "Ruecktouch halten: links speichern, rechts laden: %s", OnOff(gPortConfig.rearTouch)); break;
+        case MI_QSAVE: snprintf(buf, size, "Schnellspeichern"); break;
+        case MI_QLOAD: snprintf(buf, size, "Schnellladen"); break;
+        case MI_CH_HP: snprintf(buf, size, "Cheat: KP des Anfuehrers unendlich: %s", OnOff(gPortConfig.cheatHp)); break;
+        case MI_CH_BELLY: snprintf(buf, size, "Cheat: Bauch immer voll: %s", OnOff(gPortConfig.cheatBelly)); break;
+        case MI_CH_MONEY: snprintf(buf, size, "Cheat: viel Geld: %s", OnOff(gPortConfig.cheatMoney)); break;
+        default: snprintf(buf, size, "Zurueck zum Spiel"); break;
+    }
+}
+
+static int Wrap(int v, int d, int n)
+{
+    return (v + d + n) % n;
+}
+
+/* Changes an item; returns 1 when the menu should close. */
+static int MenuChange(int item, int d)
+{
+    switch (item) {
+        case MI_VIEW: gPortConfig.viewMode = Wrap(gPortConfig.viewMode, d, 3); break;
+        case MI_STYLE: gPortConfig.displayStyle = Wrap(gPortConfig.displayStyle, d, 3); break;
+        case MI_FPS: gPortConfig.frameRate30 ^= 1; break;
+        case MI_TURBO: gPortConfig.turbo ^= 1; break;
+        case MI_REAR: gPortConfig.rearTouch ^= 1; break;
+        case MI_CH_HP: gPortConfig.cheatHp ^= 1; break;
+        case MI_CH_BELLY: gPortConfig.cheatBelly ^= 1; break;
+        case MI_CH_MONEY: gPortConfig.cheatMoney ^= 1; break;
+        case MI_QSAVE:
+            if (d == 0) { Port_RequestQuickSave(); return 1; }
+            break;
+        case MI_QLOAD:
+            if (d == 0) { Port_RequestQuickLoad(); return 1; }
+            break;
+        case MI_BACK:
+            if (d == 0) return 1;
+            break;
+    }
+    return 0;
+}
+
+static void RunMenu(void)
+{
+    static int sel;
+    unsigned prev = ~0u;
+    char line[160];
+
+    Platform_Log("[ui] menu open\n");
+    for (;;) {
+        SceCtrlData pad;
+        unsigned pressed;
+        int i, close = 0;
+
+        sceCtrlPeekBufferPositive(0, &pad, 1);
+        pressed = pad.buttons & ~prev;
+        prev = pad.buttons;
+        if (pressed & SCE_CTRL_UP) sel = Wrap(sel, -1, MI_COUNT);
+        if (pressed & SCE_CTRL_DOWN) sel = Wrap(sel, 1, MI_COUNT);
+        if (pressed & SCE_CTRL_LEFT) close = MenuChange(sel, -1);
+        if (pressed & SCE_CTRL_RIGHT) close = MenuChange(sel, 1);
+        if (pressed & SCE_CTRL_CROSS) close = MenuChange(sel, 0) || close;
+        if (pressed & (SCE_CTRL_CIRCLE | SCE_CTRL_START))
+            close = 1;
+
+        vita2d_pool_reset();
+        DrawGame();
+        vita2d_draw_rectangle(0, 0, 960, 544, RGBA8(0, 0, 0, 190));
+        vita2d_pgf_draw_text(sFont, 60, 50, RGBA8(255, 200, 80, 255), 1.3f,
+                             "Pokemon Mystery Dungeon: Red Rescue Team - Vita " PMD_PORT_VERSION);
+        for (i = 0; i < MI_COUNT; i++) {
+            MenuLine(i, line, sizeof(line));
+            vita2d_pgf_draw_text(sFont, 80, 100 + i * 30, i == sel ? RGBA8(255, 230, 80, 255) : RGBA8(220, 220, 220, 255),
+                                 1.0f, line);
+        }
+        vita2d_pgf_draw_text(sFont, 60, 100 + sel * 30, RGBA8(255, 230, 80, 255), 1.0f, ">");
+        vita2d_pgf_draw_text(sFont, 60, 525, RGBA8(150, 150, 150, 255), 0.85f,
+                             "Steuerkreuz: waehlen/aendern   X: ausfuehren   O/START: zurueck");
+        vita2d_end_drawing();
+        vita2d_wait_rendering_done();
+        vita2d_swap_buffers();
+        sceDisplayWaitVblankStart();
+        if (close)
+            break;
+    }
+    Port_ConfigSave();
+    Platform_Log("[ui] menu closed: view=%d style=%d fps30=%d turbo=%d rear=%d cheats=%d%d%d\n",
+                 gPortConfig.viewMode, gPortConfig.displayStyle, gPortConfig.frameRate30, gPortConfig.turbo,
+                 gPortConfig.rearTouch, gPortConfig.cheatHp, gPortConfig.cheatBelly, gPortConfig.cheatMoney);
+    sAnchored = 0; /* the menu stalled the game: re-anchor the pacing */
+}
+
+/* ---- input ---- */
+
+static int sWaitRelease; /* after the menu: ignore buttons until released */
+static int sRearHold, sRearSide, sRearDone;
+
+static void RearTouch(void)
+{
+    SceTouchData t;
+    if (!gPortConfig.rearTouch)
+        return;
+    if (sceTouchPeek(SCE_TOUCH_PORT_BACK, &t, 1) < 1 || t.reportNum == 0) {
+        sRearHold = sRearDone = 0;
+        return;
+    }
+    {
+        int side = t.report[0].x < 960 ? 1 : 2; /* rear panel is 1920 wide */
+        if (side != sRearSide)
+            sRearHold = sRearDone = 0;
+        sRearSide = side;
+    }
+    /* hold for about 0.75 s, so a stray touch does nothing */
+    if (!sRearDone && ++sRearHold >= 45) {
+        sRearDone = 1;
+        if (sRearSide == 1)
+            Port_RequestQuickSave();
+        else
+            Port_RequestQuickLoad();
+    }
+}
+
+uint16_t Platform_PollKeys(void)
+{
+    SceCtrlData pad;
+    uint16_t keys = 0;
+
+    sceCtrlPeekBufferPositive(0, &pad, 1);
+    if ((pad.buttons & (SCE_CTRL_START | SCE_CTRL_SELECT)) == (SCE_CTRL_START | SCE_CTRL_SELECT)) {
+        RunMenu();
+        sWaitRelease = 1;
+        return 0;
+    }
+    if (sWaitRelease) {
+        if (pad.buttons & (SCE_CTRL_START | SCE_CTRL_SELECT | SCE_CTRL_CROSS | SCE_CTRL_CIRCLE))
+            return 0;
+        sWaitRelease = 0;
+    }
+    RearTouch();
+
+    if (pad.buttons & SCE_CTRL_CROSS) keys |= KEY_A;    /* confirm / attack */
+    if (pad.buttons & SCE_CTRL_CIRCLE) keys |= KEY_B;   /* cancel / run */
+    if (pad.buttons & SCE_CTRL_SQUARE) keys |= KEY_B;
+    if (pad.buttons & SCE_CTRL_TRIANGLE) keys |= PORT_KEY_TURBO;
+    if (pad.buttons & SCE_CTRL_LTRIGGER) keys |= KEY_L;
+    if (pad.buttons & SCE_CTRL_RTRIGGER) keys |= KEY_R;
+    if (pad.buttons & SCE_CTRL_START) keys |= KEY_START;
+    if (pad.buttons & SCE_CTRL_SELECT) keys |= KEY_SELECT;
+    if ((pad.buttons & SCE_CTRL_UP) || pad.ly < 128 - 64) keys |= KEY_UP;
+    if ((pad.buttons & SCE_CTRL_DOWN) || pad.ly > 128 + 64) keys |= KEY_DOWN;
+    if ((pad.buttons & SCE_CTRL_LEFT) || pad.lx < 128 - 64) keys |= KEY_LEFT;
+    if ((pad.buttons & SCE_CTRL_RIGHT) || pad.lx > 128 + 64) keys |= KEY_RIGHT;
+    return keys;
+}
+
+/* -------------------------------------------------------------- files */
+
+int Platform_LoadFlash(void *data, size_t size)
+{
+    SceUID fd = sceIoOpen(SAVE_PATH, SCE_O_RDONLY, 0);
+    int n;
+    if (fd < 0)
+        return 0;
+    memset(data, 0xFF, size);
+    n = sceIoRead(fd, data, size);
+    sceIoClose(fd);
+    return n > 0;
+}
+
+void Platform_SaveFlash(const void *data, size_t size)
+{
+    SceUID fd = sceIoOpen(SAVE_PATH ".tmp", SCE_O_WRONLY | SCE_O_CREAT | SCE_O_TRUNC, 0777);
+    if (fd < 0) {
+        Platform_Log("save: cannot write (0x%08x)\n", fd);
+        return;
+    }
+    sceIoWrite(fd, data, size);
+    sceIoClose(fd);
+    sceIoRemove(SAVE_PATH);
+    sceIoRename(SAVE_PATH ".tmp", SAVE_PATH);
+    Platform_Log("save: written\n");
+}
+
+long Platform_ReadFile(const char *name, void *data, size_t size)
+{
+    char path[256];
+    SceUID fd;
+    int n;
+    snprintf(path, sizeof(path), DATA_DIR "/%s", name);
+    fd = sceIoOpen(path, SCE_O_RDONLY, 0);
+    if (fd < 0)
+        return -1;
+    n = sceIoRead(fd, data, size);
+    sceIoClose(fd);
+    return n < 0 ? -1 : n;
+}
+
+int Platform_WriteFile(const char *name, const void *data, size_t size)
+{
+    char path[256], tmp[260];
+    SceUID fd;
+    int n;
+    snprintf(path, sizeof(path), DATA_DIR "/%s", name);
+    snprintf(tmp, sizeof(tmp), "%s.tmp", path);
+    fd = sceIoOpen(tmp, SCE_O_WRONLY | SCE_O_CREAT | SCE_O_TRUNC, 0777);
+    if (fd < 0)
+        return -1;
+    n = sceIoWrite(fd, data, size);
+    sceIoClose(fd);
+    if (n != (int)size) {
+        sceIoRemove(tmp);
+        return -1;
+    }
+    sceIoRemove(path);
+    return sceIoRename(tmp, path) < 0 ? -1 : 0;
+}
+
+/* Finds the US ROM among the .gba files in ux0:data/pmd/. */
+static unsigned char *LoadRom(size_t *outSize, int *foundAny)
+{
+    SceUID dir = sceIoDopen(DATA_DIR);
+    SceIoDirent ent;
+    unsigned char *rom = NULL;
+
+    *foundAny = 0;
+    if (dir < 0)
+        return NULL;
+    while (sceIoDread(dir, &ent) > 0) {
+        size_t len = strlen(ent.d_name);
+        char path[512];
+        SceUID fd;
+        if (len < 4 || strcasecmp(ent.d_name + len - 4, ".gba") != 0)
+            continue;
+        *foundAny = 1;
+        snprintf(path, sizeof(path), DATA_DIR "/%s", ent.d_name);
+        if (ent.d_stat.st_size != PORT_ROM_SIZE) {
+            Platform_Log("rom: %s has the wrong size\n", ent.d_name);
+            continue;
+        }
+        rom = (unsigned char *)malloc(PORT_ROM_SIZE);
+        fd = sceIoOpen(path, SCE_O_RDONLY, 0);
+        if (fd >= 0 && rom) {
+            int n = sceIoRead(fd, rom, PORT_ROM_SIZE);
+            sceIoClose(fd);
+            if (n == (int)PORT_ROM_SIZE && Port_RomMatches(rom, (size_t)n)) {
+                Platform_Log("rom: using %s\n", ent.d_name);
+                *outSize = (size_t)n;
+                break;
+            }
+            Platform_Log("rom: %s is not Pokemon Mystery Dungeon - Red Rescue Team (USA)\n", ent.d_name);
+        }
+        free(rom);
+        rom = NULL;
+    }
+    sceIoDclose(dir);
+    return rom;
+}
+
+/* --------------------------------------------------------------- main */
+
+/* libgcc reaches pthreads only through *weak* references, which never pull
+ * an object out of a static archive: on the Vita they all resolved to NULL,
+ * so libgcc took the program for single-threaded and the emulated TLS behind
+ * the renderer's __thread scanline buffers would be shared by all render
+ * threads. Taking the address of every gthreads entry point forces them in
+ * (same fix as in the Minish Cap and Zero Mission ports). */
+void *const gPmdGthreadsLink[] = {
+    (void *)&pthread_attr_destroy,   (void *)&pthread_attr_init,         (void *)&pthread_attr_setdetachstate,
+    (void *)&pthread_cancel,         (void *)&pthread_cond_broadcast,    (void *)&pthread_cond_destroy,
+    (void *)&pthread_cond_init,      (void *)&pthread_cond_signal,       (void *)&pthread_cond_timedwait,
+    (void *)&pthread_cond_wait,      (void *)&pthread_create,            (void *)&pthread_detach,
+    (void *)&pthread_equal,          (void *)&pthread_exit,              (void *)&pthread_getschedparam,
+    (void *)&pthread_getspecific,    (void *)&pthread_join,              (void *)&pthread_key_create,
+    (void *)&pthread_key_delete,     (void *)&pthread_mutex_destroy,     (void *)&pthread_mutex_init,
+    (void *)&pthread_mutex_lock,     (void *)&pthread_mutex_timedlock,   (void *)&pthread_mutex_trylock,
+    (void *)&pthread_mutex_unlock,   (void *)&pthread_mutexattr_destroy, (void *)&pthread_mutexattr_init,
+    (void *)&pthread_mutexattr_settype, (void *)&pthread_once,           (void *)&pthread_rwlock_rdlock,
+    (void *)&pthread_rwlock_tryrdlock, (void *)&pthread_rwlock_trywrlock, (void *)&pthread_rwlock_unlock,
+    (void *)&pthread_rwlock_wrlock,  (void *)&pthread_self,              (void *)&pthread_setschedparam,
+    (void *)&pthread_setspecific,    (void *)&sched_get_priority_max,    (void *)&sched_get_priority_min,
+    (void *)&sched_yield,
+};
+
+static void CheckGthreads(void)
+{
+    unsigned i, missing = 0;
+    for (i = 0; i < sizeof(gPmdGthreadsLink) / sizeof(gPmdGthreadsLink[0]); i++)
+        if (gPmdGthreadsLink[i] == NULL)
+            missing++;
+    Platform_Log("[thread] gthreads entry points missing=%u\n", missing);
+}
+
+int main(int argc, char **argv)
+{
+    SceAppUtilInitParam init;
+    SceAppUtilBootParam boot;
+    unsigned char *rom;
+    size_t romSize = 0;
+    int foundAny;
+
+    (void)argc; (void)argv;
+    memset(&init, 0, sizeof(init));
+    memset(&boot, 0, sizeof(boot));
+    sceAppUtilInit(&init, &boot);
+
+    scePowerSetArmClockFrequency(444);
+    scePowerSetBusClockFrequency(222);
+    scePowerSetGpuClockFrequency(222);
+    scePowerSetGpuXbarClockFrequency(166);
+
+    sceIoMkdir(DATA_DIR, 0777);
+    sceIoRemove(DATA_DIR "/log_prev.txt");
+    sceIoRename(LOG_PATH, DATA_DIR "/log_prev.txt");
+    sLog = fopen(LOG_PATH, "w");
+    Platform_Log("Pokemon Mystery Dungeon Red Vita %s\n", PMD_PORT_VERSION);
+    CheckGthreads();
+
+    sceCtrlSetSamplingMode(SCE_CTRL_MODE_ANALOG);
+    sceTouchSetSamplingState(SCE_TOUCH_PORT_BACK, SCE_TOUCH_SAMPLING_STATE_START);
+    VideoInit();
+    ShowProgress("ROM wird gelesen ... / reading the ROM ...");
+
+    rom = LoadRom(&romSize, &foundAny);
+    if (!rom) {
+        ShowMessage("ROM nicht gefunden / ROM not found",
+                    foundAny ? "Die .gba-Datei in ux0:data/pmd/ ist nicht Pokemon Mystery Dungeon - Red Rescue Team (USA).\n"
+                               "The .gba file in ux0:data/pmd/ is not Pokemon Mystery Dungeon - Red Rescue Team (USA)."
+                             : "Kopiere deine ROM (Pokemon Mystery Dungeon - Red Rescue Team, USA) nach ux0:data/pmd/\n"
+                               "Copy your ROM (Pokemon Mystery Dungeon - Red Rescue Team, USA) to ux0:data/pmd/");
+        sceKernelExitProcess(0);
+        return 0;
+    }
+    ShowProgress("Spieldaten werden geladen (beim ersten Start einige Sekunden) ...\nloading the game data (a few seconds on the first start) ...");
+    if (Port_LoadRom(rom, romSize) != 0) {
+        ShowMessage("Fehler / Error", "Die Spieldaten konnten nicht geladen werden.\nGame data could not be loaded.");
+        sceKernelExitProcess(0);
+        return 0;
+    }
+
+    AudioInit();
+    Port_Init(); /* loads settings.ini */
+    Platform_Log("settings: view=%d style=%d fps30=%d turbo=%d rear=%d\n", gPortConfig.viewMode,
+                 gPortConfig.displayStyle, gPortConfig.frameRate30, gPortConfig.turbo, gPortConfig.rearTouch);
+    Port_RunGame();
+
+    sceKernelExitProcess(0);
+    return 0;
+}

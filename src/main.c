@@ -33,6 +33,9 @@ extern const u8 IWRAM_INIT_ROM_START[];
 UNUSED static const char sStringRomUserData[] = "PKD ROM USER DATA 000000";
 
 extern void Hang(void);
+#ifdef PORT
+void Port_ResetGameRam(void);
+#endif
 
 // arm9.bin::02000B88
 void AgbMain(void)
@@ -46,6 +49,11 @@ void AgbMain(void)
     DmaStop(2);
     DmaStop(3);
 
+#ifdef PORT
+    /* Port: the game's RAM sections are host variables; (re)initialise them
+     * like the GBA start-up does (port/host_mem.c). */
+    Port_ResetGameRam();
+#else
     if (ewram_init_end - ewram_init_start > 0)
         CpuCopy32(EWRAM_INIT_ROM_START, ewram_init_start, ewram_init_end - ewram_init_start);
 
@@ -61,6 +69,7 @@ void AgbMain(void)
         memset(value, 0, sizeof(value));
         CpuSet(&value, iwram_start, CPU_SET_SRC_FIXED | CPU_SET_32BIT | (((iwram_end - iwram_start) / 4) & 0x1FFFFF));
     }
+#endif
 
     REG_WIN0H = 0;
     REG_WIN1H = 0;

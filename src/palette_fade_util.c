@@ -40,6 +40,7 @@ static void DesaturateRow(u16);
 static void ModulatePaletteRow(u16);
 static void ApplyRowPalette(u16);
 
+#ifndef PORT
 NAKED
 UNUSED static void sub_80035F8(void)
 {
@@ -48,6 +49,7 @@ UNUSED static void sub_80035F8(void)
 "	pop {r0}\n"
 "	bx r0\n");
 }
+#endif
 
 void InitPaletteFadeTable(void)
 {

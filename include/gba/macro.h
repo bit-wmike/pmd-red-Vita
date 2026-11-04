@@ -29,6 +29,11 @@
 
 #define CpuFastCopy(src, dest, size) CpuFastSet(src, dest, ((size)/(32/8) & 0x1FFFFF))
 
+#ifdef PORT
+/* Host / PS Vita port: DMA is done by port/host_dma.c. */
+void HostDmaSet(int channel, const void *src, void *dst, unsigned int control);
+#define DmaSet(dmaNum, src, dest, control) HostDmaSet(dmaNum, (const void *)(src), (void *)(dest), (control))
+#else
 #define DmaSet(dmaNum, src, dest, control)        \
 {                                                 \
     vu32 *dmaRegs = (vu32 *)REG_ADDR_DMA##dmaNum; \
@@ -37,6 +42,7 @@
     dmaRegs[2] = (vu32)(control);                 \
     dmaRegs[2];                                   \
 }
+#endif
 
 #define DMA_FILL(dmaNum, value, dest, size, bit)                                              \
 {                                                                                             \
@@ -76,6 +82,9 @@
 #define DmaCopy16(dmaNum, src, dest, size) DMA_COPY(dmaNum, src, dest, size, 16)
 #define DmaCopy32(dmaNum, src, dest, size) DMA_COPY(dmaNum, src, dest, size, 32)
 
+#ifdef PORT
+#define DmaStop(dmaNum) HostDmaSet(dmaNum, 0, 0, 0)
+#else
 #define DmaStop(dmaNum)                                         \
 {                                                               \
     vu16 *dmaRegs = (vu16 *)REG_ADDR_DMA##dmaNum;               \
@@ -83,6 +92,7 @@
     dmaRegs[5] &= ~DMA_ENABLE;                                  \
     dmaRegs[5];                                                 \
 }
+#endif
 
 #define DmaCopyLarge(dmaNum, src, dest, size, block, bit) \
 {                                                         \

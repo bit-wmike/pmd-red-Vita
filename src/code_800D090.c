@@ -1,4 +1,7 @@
 #include "global.h"
+#ifdef PORT
+void HostSyscall(int num);
+#endif
 #include "code_800D090.h"
 #include "cpu.h"
 #include "memory.h"
@@ -8,7 +11,11 @@ void Hang(void)
 {
     while (TRUE)
     {
+#ifdef PORT
+        HostSyscall(2);
+#else
         asm("swi 0x2");
+#endif
     }
 }
 
@@ -47,7 +54,11 @@ UNUSED static void sub_800D098(void)
     REG_IME = 1;
 
     SoundBiasReset();
+#ifdef PORT
+    HostSyscall(3);
+#else
     asm("swi 0x3");
+#endif
     SoundBiasSet();
 
     REG_IME = 0;

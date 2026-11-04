@@ -536,6 +536,14 @@ void GroundMap_SelectDungeon(s32 mapId_, const DungeonLocation *loc, u32 param_2
 }
 
 // overlay_0000.bin::02154FAC
+#ifdef PORT
+/* Port: the hand-written routine is translated to C (tools/port/asm2c.py). */
+u8 *Port_sub_80A5204(void *a, const u8 *b, BmaHeader *c, s32 d);
+static u8* sub_80A5204(void *a, const u8 *b, BmaHeader *c, s32 d)
+{
+    return Port_sub_80A5204(a, b, c, d);
+}
+#else
 NAKED
 static u8* sub_80A5204(void *a, const u8 *b, BmaHeader *c, s32 d)
 {
@@ -1204,6 +1212,7 @@ static u8* sub_80A5204(void *a, const u8 *b, BmaHeader *c, s32 d)
 "	pop {r1}            \n"
 "	bx r1               ");
 }
+#endif
 
 void sub_80A56A0(u8 param_1, u8 param_2)
 {
