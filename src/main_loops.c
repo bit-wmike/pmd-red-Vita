@@ -1,4 +1,7 @@
 #include "global.h"
+#ifdef PORT
+#include "port/port_view.h"
+#endif
 #include "globaldata.h"
 #include "constants/bg_music.h"
 #include "constants/friend_area.h"
@@ -281,6 +284,9 @@ static void MainLoops_RunFrameActions(u32 unused)
 
     ToggleWindowBgBuffer();
     UpdateSoundEffectCounters();
+#ifdef PORT
+    Port_ViewSceneFrame(PORT_SCENE_NONE);
+#endif
     WaitForNextFrameAndAdvanceRNG();
     LoadBufferedInputs();
 

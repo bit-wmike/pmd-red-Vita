@@ -14,11 +14,29 @@ enum {
 #define PORT_VIEW_MAX_W 400
 #define PORT_VIEW_MAX_H 240
 
+/* What the game is showing (reported by the game's frame functions). */
+enum {
+    PORT_SCENE_NONE = 0, /* title, menus, map screens: the GBA picture */
+    PORT_SCENE_DUNGEON = 1,
+    PORT_SCENE_GROUND = 2
+};
+
 extern int gPortViewMode;
+/* Margins (pixels) of the view around the GBA screen during the logic frame
+ * in progress: the game's on-screen checks are widened by them. */
+extern int gPortViewMarginLeft, gPortViewMarginRight, gPortViewMarginTop, gPortViewMarginBottom;
+
+/* Hooks for the game code. */
+void Port_ViewSceneFrame(int scene);
+int Port_ViewScene(void); /* the current PORT_SCENE_* */
+/* A sprite was staged at index `index` with the true GBA-screen position. */
+void Port_SpriteStaged(int index, int x, int y);
+/* The staged sprite `index` was written to OAM slot `slot`. */
+void Port_OamSlot(int slot, int index);
 
 /* Called by the frame loop. */
-void Port_ViewBeforeLogicEnd(void); /* the game has finished its logic frame */
-void Port_ViewOnVBlank(void);       /* after the game's VBlank handler */
+void Port_ViewBeforeLogicEnd(void);
+void Port_ViewOnVBlank(void);
 void Port_ViewBeforeRender(int *width, int *height);
 int Port_ViewWidth(void);
 int Port_ViewHeight(void);

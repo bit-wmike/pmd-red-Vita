@@ -1,96 +1,87 @@
-# Original LiveArea artwork for the Zero Mission Vita port (no game assets):
-# a night sky with stars, a rocky alien planet with an orange rim light.
+#!/usr/bin/env python3
+# Original LiveArea artwork for the Mystery Dungeon Vita port (no game
+# assets): a dark cave with a torch-lit stone floor grid and a staircase
+# glow, plus the port's name and version. Usage: make_livearea_art.py <outdir> <version>
 import math, random, sys
 from PIL import Image, ImageDraw, ImageFilter, ImageFont
 
 FONT = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
+GOLD = (250, 196, 70)
+PALE = (230, 220, 200)
 
-def sky(w, h, seed):
+
+def cave(w, h, seed, cell):
     img = Image.new("RGB", (w, h))
     px = img.load()
     for y in range(h):
         t = y / (h - 1)
-        c = (int(10 + 14 * t), int(12 + 10 * t), int(30 + 26 * t))
+        c = (int(18 + 30 * t), int(12 + 22 * t), int(28 + 24 * t))
         for x in range(w):
             px[x, y] = c
-    rnd = random.Random(seed)
     d = ImageDraw.Draw(img)
-    for _ in range(w * h // 900):
-        x, y = rnd.randrange(w), rnd.randrange(h)
-        b = rnd.randrange(110, 255)
-        r = rnd.choice((0, 0, 0, 1))
-        col = (b, b, min(255, b + 20))
-        d.ellipse((x - r, y - r, x + r, y + r), fill=col)
-    return img
-
-def planet(size, seed):
-    """RGBA planet, lit from the upper right, orange rim."""
-    s = size
-    img = Image.new("RGBA", (s, s), (0, 0, 0, 0))
-    px = img.load()
     rnd = random.Random(seed)
-    craters = [(rnd.uniform(-.8, .8), rnd.uniform(-.8, .8), rnd.uniform(.05, .16)) for _ in range(14)]
-    R = s / 2 - 2
-    for y in range(s):
-        for x in range(s):
-            nx, ny = (x - s / 2) / R, (y - s / 2) / R
-            d2 = nx * nx + ny * ny
-            if d2 > 1:
-                continue
-            nz = math.sqrt(1 - d2)
-            lx, ly, lz = .55, -.55, .63
-            lam = max(0, nx * lx + ny * ly + nz * lz)
-            base = [70, 46, 92]
-            for cx, cy, cr in craters:
-                dd = math.hypot(nx - cx, ny - cy)
-                if dd < cr:
-                    k = dd / cr
-                    shade = -22 if k < .8 else 16
-                    base = [c + shade for c in base]
-            band = math.sin(ny * 9 + math.sin(nx * 3) * 1.5) * 8
-            col = [c + band for c in base]
-            col = [c * (.25 + .9 * lam) for c in col]
-            rim = max(0, 1 - nz) ** 3
-            col = [col[0] + 255 * rim * .9, col[1] + 140 * rim * .9, col[2] + 40 * rim * .6]
-            a = 255 if d2 < .985 else int(255 * (1 - (d2 - .985) / .015))
-            px[x, y] = tuple(max(0, min(255, int(c))) for c in col) + (a,)
+    # stone floor: perspective grid in the lower half
+    horizon = int(h * 0.42)
+    for i in range(0, 40):
+        y = horizon + int((i / 40.0) ** 2 * (h - horizon))
+        shade = int(40 + 70 * i / 40)
+        d.line((0, y, w, y), fill=(shade, shade - 10, shade - 20))
+    for i in range(-12, 13):
+        x0 = w // 2 + i * cell
+        x1 = w // 2 + i * cell * 4
+        d.line((x0, horizon, x1, h), fill=(70, 58, 48))
+    # torch glow
+    glow = Image.new("RGB", (w, h), (0, 0, 0))
+    g = ImageDraw.Draw(glow)
+    r = int(min(w, h) * 0.55)
+    cx, cy = int(w * 0.5), int(h * 0.62)
+    for k in range(r, 0, -4):
+        a = int(90 * (1 - k / r) ** 2)
+        g.ellipse((cx - k, cy - k // 2, cx + k, cy + k // 2), fill=(a, int(a * 0.6), int(a * 0.2)))
+    glow = glow.filter(ImageFilter.GaussianBlur(w // 40))
+    img = Image.blend(img, Image.eval(glow, lambda v: v), 0.0)
+    img = Image.composite(img, img, Image.new("L", (w, h), 255))
+    px = img.load()
+    gp = glow.load()
+    for y in range(h):
+        for x in range(w):
+            p = px[x, y]
+            q = gp[x, y]
+            px[x, y] = (min(255, p[0] + q[0]), min(255, p[1] + q[1]), min(255, p[2] + q[2]))
+    # stars of dust
+    d = ImageDraw.Draw(img)
+    for _ in range(w * h // 1500):
+        x, y = rnd.randrange(w), rnd.randrange(horizon)
+        b = rnd.randrange(60, 160)
+        d.point((x, y), fill=(b, b - 20, b - 40))
     return img
 
-def glow(base, box, color, radius):
-    layer = Image.new("RGBA", base.size, (0, 0, 0, 0))
-    ImageDraw.Draw(layer).ellipse(box, fill=color)
-    layer = layer.filter(ImageFilter.GaussianBlur(radius))
-    base.alpha_composite(layer)
 
-def text(img, xy, s, size, fill, anchor="mm"):
+def text(img, center, s, size, color):
     d = ImageDraw.Draw(img)
     f = ImageFont.truetype(FONT, size)
-    x, y = xy
-    for dx, dy in ((2, 2), (1, 2), (2, 1)):
-        d.text((x + dx, y + dy), s, font=f, fill=(0, 0, 0, 200), anchor=anchor)
-    d.text(xy, s, font=f, fill=fill, anchor=anchor)
+    box = d.textbbox((0, 0), s, font=f)
+    tw, th = box[2] - box[0], box[3] - box[1]
+    x, y = center[0] - tw // 2 - box[0], center[1] - th // 2 - box[1]
+    d.text((x + 2, y + 2), s, font=f, fill=(0, 0, 0))
+    d.text((x, y), s, font=f, fill=color)
 
-ORANGE = (255, 156, 52, 255)
-PALE = (205, 220, 255, 255)
 
-def scene(w, h, pr, pc, seed):
-    img = sky(w, h, seed).convert("RGBA")
-    glow(img, (pc[0] - pr - 30, pc[1] - pr - 30, pc[0] + pr + 30, pc[1] + pr + 30), (255, 120, 40, 90), pr // 3)
-    p = planet(pr * 2, seed)
-    img.alpha_composite(p, (pc[0] - pr, pc[1] - pr))
-    return img
+out, version = sys.argv[1], sys.argv[2]
+bg = cave(840, 500, 7, 60)
+text(bg, (420, 120), "Mystery Dungeon", 62, GOLD)
+text(bg, (420, 175), "Red Rescue Team", 34, PALE)
+text(bg, (420, 455), "PS Vita Port " + version, 26, PALE)
+bg.quantize(256).save(f"{out}/bg.png", optimize=True)
 
-out = sys.argv[1]
-bg = scene(840, 500, 150, (420, 190), 7)
-text(bg, (420, 395), "Zero Mission", 64, ORANGE)
-text(bg, (420, 450), "PS Vita Port", 28, PALE)
-bg.convert("RGB").quantize(256).save(f"{out}/bg.png", optimize=True)
+icon = cave(128, 128, 3, 10)
+text(icon, (64, 50), "MD", 40, GOLD)
+text(icon, (64, 100), "Vita", 22, PALE)
+icon.quantize(256).save(f"{out}/icon0.png", optimize=True)
 
-icon = scene(128, 128, 46, (64, 54), 3)
-text(icon, (64, 112), "ZM", 26, ORANGE)
-icon.convert("RGB").quantize(256).save(f"{out}/icon0.png", optimize=True)
-
-st = scene(280, 158, 46, (58, 79), 5)
-text(st, (196, 66), "Zero Mission", 19, ORANGE)
-text(st, (196, 96), "Start", 17, PALE)
-st.convert("RGB").quantize(256).save(f"{out}/startup.png", optimize=True)
+st = cave(280, 158, 5, 24)
+text(st, (140, 55), "Mystery Dungeon", 26, GOLD)
+text(st, (140, 90), "Start", 20, PALE)
+text(st, (140, 130), "v" + version, 16, PALE)
+st.quantize(256).save(f"{out}/startup.png", optimize=True)
+print("livearea art written to", out)

@@ -1,4 +1,7 @@
 #include "global.h"
+#ifdef PORT
+#include "port/port_view.h"
+#endif
 #include "globaldata.h"
 #include "constants/dungeon.h"
 #include "constants/move_id.h"
@@ -351,6 +354,9 @@ u32 xxx_script_related_8098468_Async(s32 startMode)
             sub_8099744();
             UpdateSoundEffectCounters();
             IncrementPlayTime(gPlayTimeRef);
+#ifdef PORT
+            Port_ViewSceneFrame(PORT_SCENE_GROUND);
+#endif
             WaitForNextFrameAndAdvanceRNG();
             LoadBufferedInputs();
             nullsub_120();

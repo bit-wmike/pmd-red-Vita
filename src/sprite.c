@@ -1,4 +1,7 @@
 #include "global.h"
+#ifdef PORT
+#include "port/port_view.h"
+#endif
 #include "globaldata.h"
 #include "bg_palette_buffer.h"
 #include "cpu.h"
@@ -231,6 +234,24 @@ void AddAxSprite(const ax_pose *axPose, const axdata1 *axData, const ax_sprite *
     pos = SpriteGetX(sprite);
     pos += axData->pos.x - 0x100;
 
+#ifdef PORT
+    /* Port: the view may be wider than the GBA screen. */
+    if (pos < -64 - gPortViewMarginLeft)
+        return;
+    if (pos >= DISPLAY_WIDTH + gPortViewMarginRight)
+        return;
+    SpriteSetX(sprite, pos);
+    {
+        s32 portX = pos;
+        pos = SpriteGetY(sprite);
+        pos += axData->pos.y - 0x200;
+        if (pos < -64 - gPortViewMarginTop)
+            return;
+        if (pos >= DISPLAY_HEIGHT + gPortViewMarginBottom)
+            return;
+        Port_SpriteStaged(sSpriteCount, portX, pos);
+    }
+#else
     if (pos < -64)
         return;
     if (pos >= DISPLAY_WIDTH)
@@ -244,6 +265,7 @@ void AddAxSprite(const ax_pose *axPose, const axdata1 *axData, const ax_sprite *
         return;
     if (pos >= DISPLAY_HEIGHT)
         return;
+#endif
 
     SpriteSetOamY(sprite, pos);
 
@@ -287,6 +309,16 @@ void AddSprite(SpriteOAM *a0, s32 a1, ax_sprite *a2, unkStruct_2039DB0 *spriteMa
 
     yPos = spr->unk6 >> SPRITEOAM_SHIFT_WORKING_Y;
     nullsub_3(yPos, 0);
+#ifdef PORT
+    {
+        /* Port: remember the true position (9-bit x nearest to the screen
+         * centre, 12-bit working y). */
+        s32 rawX = spr->attrib2 & 0x1FF;
+        s32 trueX = 120 + (((rawX - 120 + 256) & 511) - 256);
+        s32 trueY = (s32)((yPos & 0xFFF) << 20) >> 20;
+        Port_SpriteStaged(sSpriteCount, trueX, trueY);
+    }
+#endif
     yPos &= SPRITEOAM_MAX_Y;
     spr->attrib1 &= ~SPRITEOAM_MASK_Y;
     spr->attrib1 |= yPos;
@@ -340,6 +372,9 @@ void CopySpritesToOam(void)
 
         // Each OAM entry is 8 bytes [struct OamData]
         if (spr != NULL) {
+#ifdef PORT
+            Port_OamSlot((s32)(((u32)oam - OAM) / 8) - 1, (s32)(spr - sUnknown_20262A8));
+#endif
             // Skip affineParam
             oam -= 2;
             // Set tileNum/priority/paletteNum

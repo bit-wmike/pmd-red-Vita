@@ -1,4 +1,7 @@
 #include "global.h"
+#ifdef PORT
+#include "port/port_view.h"
+#endif
 #include "globaldata.h"
 #include "dungeon_mon_sprite_render.h"
 #include "constants/direction.h"
@@ -292,7 +295,11 @@ void UpdateMonsterSprite(Entity *entity)
 
     xSprite = entInfo->pixelPos.x - gDungeon->unk181e8.cameraPixelPos.x;
     ySprite = entInfo->pixelPos.y - gDungeon->unk181e8.cameraPixelPos.y;
+    #ifdef PORT
+    if (xSprite >= -32 - gPortViewMarginLeft && ySprite >= -32 - gPortViewMarginTop && xSprite <= 271 + gPortViewMarginRight && ySprite <= 191 + gPortViewMarginBottom && shadowIndex != 6 && entity->unk22 == 0) {
+#else
     if (xSprite >= -32 && ySprite >= -32 && xSprite <= 271 && ySprite <= 191 && shadowIndex != 6 && entity->unk22 == 0) {
+#endif
         struct unkStruct_202ED28 *spriteStructPtr = &gUnknown_202ED28[var_34][shadowIndex];
         if (entInfo->unk156 != 0) {
             SpriteSetX(&spriteStructPtr->sprite, xSprite + spriteStructPtr->pos.x);

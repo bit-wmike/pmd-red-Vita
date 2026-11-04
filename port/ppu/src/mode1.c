@@ -55,6 +55,9 @@ typedef struct Mode1TilemapEntry {
     uint16_t raw;
 } Mode1TilemapEntry;
 
+/* PMD port: a shadow tilemap cell with this value draws nothing. */
+#define MODE1_SHADOW_BLANK 0xFFFFu
+
 /* Widescreen Option A — port-side shadow tilemap pointers (declared in
  * include/cpu/mode1.h, populated by the PC port). NULL => no widescreen
  * reveal for that BG; render_text_bg_line then clips at MODE1_GBA_BG_CLIP_X
@@ -896,6 +899,10 @@ static void mode1_render_text_bg_native_4bpp_range(int bg_index, uint32_t char_b
                             ? virtuappu_mode1_ws_shadow[bg_index][(size_t)local_row * (size_t)shadow_stride +
                                                                  (size_t)shadow_index]
                             : 0u;
+            if (entry.raw == MODE1_SHADOW_BLANK) { /* port: transparent cell */
+                sx += run;
+                continue;
+            }
         } else {
             const uint32_t map_addr =
                 screen_base + (uint32_t)screen_block_index * 0x800u + (uint32_t)(local_row * 32 + local_col) * 2u;
@@ -1097,6 +1104,10 @@ static void mode1_render_text_bg_native_tokens_range(int bg_index, int line, uin
                             ? virtuappu_mode1_ws_shadow[bg_index][(size_t)local_row * (size_t)shadow_stride +
                                                                  (size_t)shadow_index]
                             : 0u;
+            if (entry.raw == MODE1_SHADOW_BLANK) { /* port: transparent cell */
+                sx += run;
+                continue;
+            }
         } else {
             entry.raw = (uint16_t)mode1_memory.vram[map_addr] | ((uint16_t)mode1_memory.vram[map_addr + 1u] << 8u);
         }
@@ -1282,6 +1293,8 @@ next_pass:
                             ? virtuappu_mode1_ws_shadow[bg_index][(size_t)local_row * (size_t)shadow_stride +
                                                                  (size_t)shadow_index]
                             : 0u;
+            if (entry.raw == MODE1_SHADOW_BLANK) /* port: transparent cell */
+                continue;
         } else {
             const int screen_block_x = tile_col >> 5;
             const int screen_block_index = screen_block_x + screen_block_y * blocks_per_row;
@@ -1511,6 +1524,8 @@ void virtuappu_mode1_render_text_bg_line(int bg_index, int line, uint32_t* line_
                 bg_row_base = char_base + (uint32_t)mode1_tile_index(bg_tile_entry) * 32u + (uint32_t)bg_tpy * 4u;     \
             }                                                                                                          \
             bg_pal_bank = (size_t)mode1_tile_palette(bg_tile_entry) * 16u;                                             \
+            if (cache_use_shadow && bg_tile_entry.raw == MODE1_SHADOW_BLANK)                                           \
+                bg_row_base = MODE1_VRAM_SIZE; /* port: transparent cell */                                            \
         }                                                                                                              \
         int tile_pixel_x = bg_hflip ? (7 - pixel_x) : pixel_x;                                                         \
         uint8_t color_index;                                                                                           \

@@ -1,4 +1,13 @@
 #include "global.h"
+#ifdef PORT
+/* Port: hidden sprites are parked far outside any view (the GBA used 304, 208). */
+#include "port/port_view.h"
+#define PORT_OFFSCREEN_X 2000
+#define PORT_OFFSCREEN_Y 2000
+#else
+#define PORT_OFFSCREEN_X 304
+#define PORT_OFFSCREEN_Y 208
+#endif
 #include "globaldata.h"
 #include "code_8099360.h"
 #include "ground_sprite.h"
@@ -305,7 +314,11 @@ bool8 IsOnscreen_80A675C(struct UnkGroundSpriteStruct *ptr, PixelPos *pixPosArg)
         result.y = (pixPosArg->y / 256);
     }
 
+#ifdef PORT
+    if (result.x >= -64 - gPortViewMarginLeft && result.x <= 303 + gPortViewMarginRight && result.y >= -16 - gPortViewMarginTop && result.y <= 207 + gPortViewMarginBottom) {
+#else
     if (result.x >= -64 && result.x <= 303 && result.y >= -16 && result.y <= 207) {
+#endif
         return TRUE;
     }
 
@@ -835,10 +848,14 @@ bool8 sub_80A7094(struct UnkGroundSpriteStruct *ptr, PixelPos *r10, PixelPos *po
 
     resultPos = (PixelPos) {(posArg->x / 256) - gUnknown_2039DD8.x, (posArg->y / 256) - gUnknown_2039DD8.y};
     unkY = resultPos.y - (a3 / 256);
+#ifdef PORT
+    if (resultPos.x >= -64 - gPortViewMarginLeft && resultPos.x <= 303 + gPortViewMarginRight && resultPos.y >= -16 - gPortViewMarginTop && resultPos.y <= 207 + gPortViewMarginBottom && unkY >= -16 - gPortViewMarginTop && unkY <= 207 + gPortViewMarginBottom) {
+#else
     if (resultPos.x >= -64 && resultPos.x <= 303 && resultPos.y >= -16 && resultPos.y <= 207 && unkY >= -16 && unkY <= 207) {
+#endif
         if ((ptr->flags_0x50 & 0x10) && (gUnknown_2039DCC & 1)) {
             sub_80A72B8(ptr, FALSE);
-            DoAxFrame_800558C(&ptr->axdata, 304, 208, 0, ptr->unk68, &ptr->unk3C);
+            DoAxFrame_800558C(&ptr->axdata, PORT_OFFSCREEN_X, PORT_OFFSCREEN_Y, 0, ptr->unk68, &ptr->unk3C);
             ptr->unk70 = 0;
             return FALSE;
         }
@@ -854,7 +871,7 @@ bool8 sub_80A7094(struct UnkGroundSpriteStruct *ptr, PixelPos *r10, PixelPos *po
     }
     else if (ptr->unk70 != 0) {
         sub_80A72B8(ptr, TRUE);
-        DoAxFrame_800558C(&ptr->axdata, 304, 208, 0, ptr->unk68, &ptr->unk3C);
+        DoAxFrame_800558C(&ptr->axdata, PORT_OFFSCREEN_X, PORT_OFFSCREEN_Y, 0, ptr->unk68, &ptr->unk3C);
         ptr->unk70 = 0;
         return FALSE;
     }

@@ -12,6 +12,7 @@
  * the platform.
  */
 #include <string.h>
+#include <stdlib.h>
 
 #include "port/port.h"
 #include "gba/types.h"
@@ -91,6 +92,26 @@ static void TakePcmBlock(void)
     const int8_t *a, *b;
 
     sFifoCount = 0;
+#ifndef __vita__
+    {
+        static int debug = -1;
+        if (debug < 0)
+            debug = getenv("PMD_AUDIO_DEBUG") != NULL;
+        if (debug && (Port_FrameCounter() % 61) == 0) {
+            int sum = 0, k;
+            if (si && si->pcmDmaPeriod) {
+                int cc = si->pcmDmaCounter, nn = si->pcmSamplesPerVBlank;
+                int bb = (cc <= 1) ? 0 : si->pcmDmaPeriod - (cc - 1);
+                for (k = 0; k < nn && k < 1024; k++)
+                    sum += abs(si->pcmBuffer[bb * nn + k]);
+            }
+            Platform_Log("audio: frame %u ident=%08x counter=%d period=%d spv=%d cntH=%04x cntX=%02x snd1=%04x snd2=%04x blockabs=%d\n",
+                         (unsigned)Port_FrameCounter(), si ? (unsigned)si->ident : 0, si ? si->pcmDmaCounter : -1,
+                         si ? si->pcmDmaPeriod : -1, si ? (int)si->pcmSamplesPerVBlank : -1, IO16(0x82), IO8(0x84),
+                         IO16(0x62), IO16(0x68), sum);
+        }
+    }
+#endif
     if (si == NULL || (si->ident != ID_NUMBER && si->ident != ID_NUMBER + 1))
         return;
     n = si->pcmSamplesPerVBlank;

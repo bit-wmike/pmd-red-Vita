@@ -1,4 +1,7 @@
 #include "global.h"
+#ifdef PORT
+#include "port/port_view.h"
+#endif
 #include "globaldata.h"
 #include "code_8099360.h"
 #include "effect_main.h"
@@ -278,7 +281,11 @@ static bool8 sub_800DD0C(struct unkStruct_203B0CC_sub *param_1, DungeonPos *posA
             y = param_1->unkC.pos1.y - posArg->y + pos.y;
             param_1->unkC.pos1.x += param_1->unkCC.x;
             param_1->unkC.pos1.y += param_1->unkCC.y;
+#ifdef PORT
+            if (x > -64 - gPortViewMarginLeft && x < 304 + gPortViewMarginRight && y > -64 - gPortViewMarginTop && y < 224 + gPortViewMarginBottom) {
+#else
             if (x > -64 && x < 304 && y > -64 && y < 224) {
+#endif
                 DoAxFrame_800558C(axData,x,y,unkY,param_1->paletteNum,&param_1->unkC.spriteMasks);
             }
         }

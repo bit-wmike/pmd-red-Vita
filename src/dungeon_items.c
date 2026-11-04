@@ -1,4 +1,7 @@
 #include "global.h"
+#ifdef PORT
+#include "port/port_view.h"
+#endif
 #include "globaldata.h"
 #include "dungeon_items.h"
 #include "dungeon_8041AD0.h"
@@ -392,7 +395,11 @@ bool8 sub_80462AC(Entity * entity, u8 hallucinating, u8 a2, u8 a3, u8 a4)
     y2 = ((entity->pixelPos.y / 256) - gDungeon->unk181e8.cameraPixelPos.y) + 8;
     y2 /= 2;
 
+#ifdef PORT
+    if (x >= -32 - gPortViewMarginLeft && y >= -32 - gPortViewMarginTop && x <= 272 + gPortViewMarginRight && y <= 192 + gPortViewMarginBottom) {
+#else
     if (x >= -32 && y >= -32 && x <= 272 && y <= 192) {
+#endif
         s32 tileNum;
 
         SpriteSetMatrixNum(&gUnknown_202EDC0, 0);

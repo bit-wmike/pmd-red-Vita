@@ -81,7 +81,7 @@ $(GEN)/gfx.stamp: tools/port/make_graphics.sh
 
 $(BUILD)/src/%.o: src/%.c tools/port/pp_assets.py | $(GEN)/gfx.stamp
 	@mkdir -p $(dir $@)
-	@$(CC) -E $(CPPFLAGS) $< -o $(BUILD)/src/$*.i
+	@$(CC) -E $(CPPFLAGS) $(ARCHFLAGS) -std=gnu11 $< -o $(BUILD)/src/$*.i
 	@$(PYTHON) tools/port/pp_assets.py $(BUILD)/src/$*.i $(BUILD)/src/$*.pp.i PortAssets_$(subst /,_,$(subst .,_,$*))
 	@$(PREPROC) $(BUILD)/src/$*.pp.i charmap.txt > $(BUILD)/src/$*.pp.c
 	$(CC) $(CFLAGS) -c $(BUILD)/src/$*.pp.c -o $@

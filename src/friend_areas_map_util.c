@@ -1,4 +1,7 @@
 #include "global.h"
+#ifdef PORT
+#include "port/port_view.h"
+#endif
 #include "globaldata.h"
 #include "constants/direction.h"
 #include "bg_control.h"
@@ -378,6 +381,9 @@ void FriendAreasMap_RunFrameActions(void)
     sub_8005180();
     ToggleWindowBgBuffer();
     IncrementPlayTime(gPlayTimeRef);
+#ifdef PORT
+    Port_ViewSceneFrame(PORT_SCENE_NONE);
+#endif
     WaitForNextFrameAndAdvanceRNG();
     LoadBufferedInputs();
     CopySpritesToOam();

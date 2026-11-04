@@ -1,4 +1,7 @@
 #include "global.h"
+#ifdef PORT
+#include "port/port_view.h"
+#endif
 #include "globaldata.h"
 #include "dungeon_vram.h"
 #include "structs/str_dungeon.h"
@@ -211,6 +214,9 @@ static void sub_803E490(u32 unused)
     gDungeonFramesCounter++;
 
     IncrementPlayTime(gPlayTimeRef);
+#ifdef PORT
+    Port_ViewSceneFrame(PORT_SCENE_DUNGEON);
+#endif
     WaitForNextFrameAndAdvanceRNG();
     LoadBufferedInputs();
     CopySpritesToOam();
@@ -243,6 +249,9 @@ void sub_803E668(u32 unused)
     ToggleWindowBgBuffer();
     gDungeonFramesCounter++;
     IncrementPlayTime(gPlayTimeRef);
+#ifdef PORT
+    Port_ViewSceneFrame(PORT_SCENE_DUNGEON);
+#endif
     WaitForNextFrameAndAdvanceRNG();
     LoadBufferedInputs();
     CopySpritesToOam();

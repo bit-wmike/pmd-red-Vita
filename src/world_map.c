@@ -1,4 +1,7 @@
 #include "global.h"
+#ifdef PORT
+#include "port/port_view.h"
+#endif
 #include "globaldata.h"
 #include "bg_control.h"
 #include "bg_palette_buffer.h"
@@ -411,6 +414,9 @@ static void WorldMap_RunFrameActions(void)
     sub_8005180();
     ToggleWindowBgBuffer();
     IncrementPlayTime(gPlayTimeRef);
+#ifdef PORT
+    Port_ViewSceneFrame(PORT_SCENE_NONE);
+#endif
     WaitForNextFrameAndAdvanceRNG();
     LoadBufferedInputs();
     CopySpritesToOam();
