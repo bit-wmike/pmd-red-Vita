@@ -24,6 +24,9 @@ DECL_RE = re.compile(r'(?P<name>[A-Za-z_]\w*)\s*(?P<dims>(?:\[[^\]]*\]\s*)+)\s*=
 ASMREG_RE = re.compile(r'\basm\s*\(\s*"[rsl][0-9a-z]*"\s*\)')
 
 
+CHUNK = 512  # must match tools/port/gen_data.py
+
+
 def fnv64(data):
     h = 0xcbf29ce484222325
     for b in data:
@@ -74,7 +77,8 @@ def main():
         else:
             k1 = int.from_bytes(key1, "little")
         k2 = int.from_bytes(key2, "little") if key2 else 0
-        regs.append((dm.group("name"), len(data), fnv64(data), k1, off1, k2, off2))
+        chunks = [fnv64(data[i:i + CHUNK]) for i in range(0, len(data), CHUNK)] if len(data) >= 2 * CHUNK else []
+        regs.append((dm.group("name"), len(data), fnv64(data), k1, off1, k2, off2, chunks))
     pieces.append(text[pos:])
     text = "".join(pieces)
     if "INCBIN_" in text and INCBIN_RE.search(text):
@@ -83,11 +87,15 @@ def main():
         f.write(text)
         f.write("\n\n/* Port: game data of this file comes from the ROM (tools/port/pp_assets.py). */\n")
         f.write("void PortAsset_Add(const char *name, void *dst, unsigned size, unsigned long long hash, "
-                "unsigned long long key1, int keyOff1, unsigned long long key2, int keyOff2);\n")
+                "unsigned long long key1, int keyOff1, unsigned long long key2, int keyOff2, "
+                "const unsigned long long *chunks, unsigned chunkCount);\n")
+        for name, size, h, k1, off1, k2, off2, chunks in regs:
+            if chunks:
+                f.write("static const unsigned long long sPortChunks_%s[] = {%s};\n" % (name, ",".join("0x%xull" % c for c in chunks)))
         f.write("void %s(void)\n{\n" % func)
-        for name, size, h, k1, off1, k2, off2 in regs:
-            f.write("    PortAsset_Add(\"%s\", (void *)%s, %du, 0x%016xull, 0x%016xull, %d, 0x%016xull, %d);\n" % (
-                name, name, size, h, k1, off1, k2, off2))
+        for name, size, h, k1, off1, k2, off2, chunks in regs:
+            f.write("    PortAsset_Add(\"%s\", (void *)%s, %du, 0x%016xull, 0x%016xull, %d, 0x%016xull, %d, %s, %d);\n" % (
+                name, name, size, h, k1, off1, k2, off2, ("sPortChunks_%s" % name) if chunks else "0", len(chunks)))
         f.write("}\n")
 
 

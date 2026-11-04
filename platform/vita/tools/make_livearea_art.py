@@ -1,87 +1,95 @@
 #!/usr/bin/env python3
 # Original LiveArea artwork for the Mystery Dungeon Vita port (no game
-# assets): a dark cave with a torch-lit stone floor grid and a staircase
-# glow, plus the port's name and version. Usage: make_livearea_art.py <outdir> <version>
+# assets), in the flat style of the Minish Cap port: a rescue-team style
+# badge (gold ring, blue gem, wings, ribbon) on a warm red gradient with
+# sparkles, plus the port's name and version.
+# Usage: make_livearea_art.py <outdir> <version>
 import math, random, sys
-from PIL import Image, ImageDraw, ImageFilter, ImageFont
+from PIL import Image, ImageDraw, ImageFont
 
 FONT = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
-GOLD = (250, 196, 70)
-PALE = (230, 220, 200)
+CREAM = (252, 240, 200)
+PALE = (255, 226, 170)
 
 
-def cave(w, h, seed, cell):
+def background(w, h, seed):
     img = Image.new("RGB", (w, h))
     px = img.load()
+    top, bottom = (120, 26, 30), (206, 78, 44)
     for y in range(h):
-        t = y / (h - 1)
-        c = (int(18 + 30 * t), int(12 + 22 * t), int(28 + 24 * t))
+        t = y / max(1, h - 1)
+        c = tuple(int(top[i] + (bottom[i] - top[i]) * t) for i in range(3))
         for x in range(w):
             px[x, y] = c
     d = ImageDraw.Draw(img)
     rnd = random.Random(seed)
-    # stone floor: perspective grid in the lower half
-    horizon = int(h * 0.42)
-    for i in range(0, 40):
-        y = horizon + int((i / 40.0) ** 2 * (h - horizon))
-        shade = int(40 + 70 * i / 40)
-        d.line((0, y, w, y), fill=(shade, shade - 10, shade - 20))
-    for i in range(-12, 13):
-        x0 = w // 2 + i * cell
-        x1 = w // 2 + i * cell * 4
-        d.line((x0, horizon, x1, h), fill=(70, 58, 48))
-    # torch glow
-    glow = Image.new("RGB", (w, h), (0, 0, 0))
-    g = ImageDraw.Draw(glow)
-    r = int(min(w, h) * 0.55)
-    cx, cy = int(w * 0.5), int(h * 0.62)
-    for k in range(r, 0, -4):
-        a = int(90 * (1 - k / r) ** 2)
-        g.ellipse((cx - k, cy - k // 2, cx + k, cy + k // 2), fill=(a, int(a * 0.6), int(a * 0.2)))
-    glow = glow.filter(ImageFilter.GaussianBlur(w // 40))
-    img = Image.blend(img, Image.eval(glow, lambda v: v), 0.0)
-    img = Image.composite(img, img, Image.new("L", (w, h), 255))
-    px = img.load()
-    gp = glow.load()
-    for y in range(h):
-        for x in range(w):
-            p = px[x, y]
-            q = gp[x, y]
-            px[x, y] = (min(255, p[0] + q[0]), min(255, p[1] + q[1]), min(255, p[2] + q[2]))
-    # stars of dust
-    d = ImageDraw.Draw(img)
-    for _ in range(w * h // 1500):
-        x, y = rnd.randrange(w), rnd.randrange(horizon)
-        b = rnd.randrange(60, 160)
-        d.point((x, y), fill=(b, b - 20, b - 40))
+    for _ in range(w * h // 2600):
+        x, y = rnd.randrange(w), rnd.randrange(h)
+        r = rnd.choice((1, 1, 2, 2, 3))
+        d.ellipse((x - r, y - r, x + r, y + r), fill=(255, 214, 150))
     return img
 
 
-def text(img, center, s, size, color):
+def badge(img, cx, cy, r):
+    """A rescue badge: wings, gold ring, blue gem, ribbon tails."""
+    d = ImageDraw.Draw(img)
+    gold, gold_dark, gold_light = (238, 186, 60), (166, 112, 28), (255, 232, 150)
+    blue, blue_dark, blue_light = (70, 140, 230), (30, 70, 160), (190, 220, 255)
+    red, red_dark = (214, 50, 50), (140, 20, 30)
+    # ribbon tails
+    for sgn in (-1, 1):
+        pts = [(cx + sgn * r * 0.25, cy + r * 0.55), (cx + sgn * r * 0.95, cy + r * 1.45),
+               (cx + sgn * r * 0.55, cy + r * 1.35), (cx + sgn * r * 0.75, cy + r * 1.75),
+               (cx + sgn * r * 0.05, cy + r * 0.95)]
+        d.polygon(pts, fill=red, outline=red_dark)
+    # wings
+    for sgn in (-1, 1):
+        for i, (dy, ln) in enumerate(((-0.55, 1.9), (-0.2, 1.7), (0.15, 1.4))):
+            pts = [(cx + sgn * r * 0.7, cy + r * (dy + 0.2)),
+                   (cx + sgn * r * ln, cy + r * (dy - 0.35)),
+                   (cx + sgn * r * (ln - 0.1), cy + r * (dy + 0.25)),
+                   (cx + sgn * r * 0.75, cy + r * (dy + 0.45))]
+            d.polygon(pts, fill=gold_light if i == 0 else gold, outline=gold_dark)
+    # ring and gem
+    d.ellipse((cx - r, cy - r, cx + r, cy + r), fill=gold, outline=gold_dark, width=max(2, r // 18))
+    d.ellipse((cx - r * 0.78, cy - r * 0.78, cx + r * 0.78, cy + r * 0.78), fill=gold_dark)
+    d.ellipse((cx - r * 0.68, cy - r * 0.68, cx + r * 0.68, cy + r * 0.68), fill=blue, outline=blue_dark, width=max(1, r // 30))
+    d.ellipse((cx - r * 0.38, cy - r * 0.52, cx - r * 0.02, cy - r * 0.18), fill=blue_light)
+    # small star in the gem
+    pts = []
+    for k in range(10):
+        a = -math.pi / 2 + k * math.pi / 5
+        rr = r * (0.34 if k % 2 == 0 else 0.15)
+        pts.append((cx + rr * math.cos(a), cy + r * 0.08 + rr * math.sin(a)))
+    d.polygon(pts, fill=CREAM)
+
+
+def text(img, center, s, size, color, shadow=(60, 10, 10)):
     d = ImageDraw.Draw(img)
     f = ImageFont.truetype(FONT, size)
     box = d.textbbox((0, 0), s, font=f)
     tw, th = box[2] - box[0], box[3] - box[1]
     x, y = center[0] - tw // 2 - box[0], center[1] - th // 2 - box[1]
-    d.text((x + 2, y + 2), s, font=f, fill=(0, 0, 0))
+    d.text((x + 3, y + 3), s, font=f, fill=shadow)
     d.text((x, y), s, font=f, fill=color)
 
 
 out, version = sys.argv[1], sys.argv[2]
-bg = cave(840, 500, 7, 60)
-text(bg, (420, 120), "Mystery Dungeon", 62, GOLD)
-text(bg, (420, 175), "Red Rescue Team", 34, PALE)
-text(bg, (420, 455), "PS Vita Port " + version, 26, PALE)
+bg = background(840, 500, 7)
+badge(bg, 420, 175, 95)
+text(bg, (420, 365), "Mystery Dungeon", 62, CREAM)
+text(bg, (420, 425), "Red Rescue Team  ·  Vita Port " + version, 28, PALE)
 bg.quantize(256).save(f"{out}/bg.png", optimize=True)
 
-icon = cave(128, 128, 3, 10)
-text(icon, (64, 50), "MD", 40, GOLD)
-text(icon, (64, 100), "Vita", 22, PALE)
+icon = background(128, 128, 3)
+badge(icon, 64, 50, 30)
+text(icon, (64, 108), "MD", 30, CREAM)
 icon.quantize(256).save(f"{out}/icon0.png", optimize=True)
 
-st = cave(280, 158, 5, 24)
-text(st, (140, 55), "Mystery Dungeon", 26, GOLD)
-text(st, (140, 90), "Start", 20, PALE)
-text(st, (140, 130), "v" + version, 16, PALE)
+st = background(280, 158, 5)
+badge(st, 44, 72, 27)
+text(st, (178, 50), "Mystery Dungeon", 18, CREAM)
+text(st, (178, 84), "Start", 20, PALE)
+text(st, (178, 124), "v" + version, 14, PALE)
 st.quantize(256).save(f"{out}/startup.png", optimize=True)
 print("livearea art written to", out)

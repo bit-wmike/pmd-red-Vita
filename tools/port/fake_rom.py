@@ -55,8 +55,14 @@ def main():
     for i in range(SIZE):
         rom[i] = rnd.getrandbits(8) if i % 97 == 0 else 0  # mostly zero with some noise
     rnd.shuffle(blocks)
+    corrupt = int(sys.argv[3]) if len(sys.argv) > 3 else 0  # every Nth block loses a quarter of its bytes
     off = 0xC0
-    for b in blocks:
+    for n, b in enumerate(blocks):
+        if corrupt and n % corrupt == 0 and len(b) >= 2048:
+            bb = bytearray(b)
+            for i in range(len(bb) * 3 // 4, len(bb)):
+                bb[i] = rnd.getrandbits(8)
+            b = bytes(bb)
         if off + len(b) > SIZE:
             sys.exit("fake_rom: data does not fit")
         rom[off:off + len(b)] = b

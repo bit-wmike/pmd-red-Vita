@@ -41,6 +41,9 @@ ROOT = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), 
 BASEROM_RE = re.compile(r'^(\s*)\.incbin\s+"baserom\.gba"\s*,\s*(0x[0-9a-fA-F]+|\d+)\s*,\s*(0x[0-9a-fA-F]+|\d+)\s*$', re.M)
 
 
+CHUNK = 512  # partial matches (other ROM versions) are judged per chunk
+
+
 def fnv64(data):
     h = 0xcbf29ce484222325
     for b in data:
@@ -174,6 +177,7 @@ def analyse_inner(args):
             key1, off1, key2, off2, fill = keysel.select(data, free)
             result["blobs"].append({
                 "name": blob, "size": len(data), "hash": fnv64(data),
+                "chunks": [fnv64(data[i:i + CHUNK]) for i in range(0, len(data), CHUNK)] if len(data) >= 2 * CHUNK else [],
                 "key1": key1, "off1": off1, "key2": key2, "off2": off2, "fill": fill,
                 "rom_addr": rom_addr, "holes": holes, "src": src, "sec": sec.name,
             })
@@ -260,15 +264,18 @@ def main():
         for i, b in enumerate(blobs):
             if b["holes"]:
                 c.write("static const uint32_t sHoles%d[] = {%s};\n" % (i, ",".join("%d,%d" % h for h in b["holes"])))
+            if b["chunks"]:
+                c.write("static const uint64_t sChunks%d[] = {%s};\n" % (i, ",".join("0x%xull" % h for h in b["chunks"])))
         c.write("\nconst struct PortBlob gPortBlobs[] = {\n")
         for i, b in enumerate(blobs):
             k1 = struct.unpack("<Q", b["key1"])[0] if b["key1"] else (b["fill"] if b["fill"] is not None else 0)
             k2 = struct.unpack("<Q", b["key2"])[0] if b["key2"] else 0
             off1 = b["off1"] if b["fill"] is None else -2
-            c.write("    { %s, %du, 0x%016xull, 0x%016xull, %d, 0x%016xull, %d, 0x%x, %s, %d, %s },\n" % (
+            c.write("    { %s, %du, 0x%016xull, 0x%016xull, %d, 0x%016xull, %d, 0x%x, %s, %d, %s, %d, %s },\n" % (
                 b["name"], b["size"], b["hash"], k1, off1, k2, b["off2"],
                 (b["rom_addr"] if b["rom_addr"] is not None else 0),
                 ("sHoles%d" % i) if b["holes"] else "0", len(b["holes"]),
+                ("sChunks%d" % i) if b["chunks"] else "0", len(b["chunks"]),
                 c_str("%s:%s" % (b["src"], b["sec"]))))
         c.write("};\nconst unsigned gPortBlobCount = sizeof(gPortBlobs) / sizeof(gPortBlobs[0]);\n")
 

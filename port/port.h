@@ -38,6 +38,9 @@ extern size_t gHostRomSize;
 /* ---- game data (port/host_assets.c) ---- */
 /* True if the image is the ROM this build was made for (US 1.0). */
 int Port_RomMatches(const void *rom, size_t size);
+/* 'E' (USA), 'P' (Europe), 'J' (Japan) from the cartridge header, 0 if the
+ * image is not a Red Rescue Team ROM of the right size. */
+int Port_RomVersion(const void *rom, size_t size);
 /* Takes ownership of the ROM buffer; copies the game's data out of it and
  * resolves the pointers. Returns 0 on success. */
 int Port_LoadRom(unsigned char *rom, size_t size);

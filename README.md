@@ -8,10 +8,14 @@ FIFO, picture unit) is reproduced in C.
 German setup guide: [`platform/vita/README.md`](platform/vita/README.md).
 The original decompilation README is in [`docs/README-decomp.md`](docs/README-decomp.md).
 
-**No game data is included.** The port needs your own dump of the US ROM
-(`sha1: 9f4cfc5b5f4859d17169a485462e977c7aac2b89`). At start-up it reads
-graphics, maps, text and sounds from that file (the first start scans the ROM
-once and caches the offsets in `romindex.txt`).
+**No game data is included.** The port needs your own dump of the ROM. It is
+built from the US version (`sha1: 9f4cfc5b5f4859d17169a485462e977c7aac2b89`);
+the European ROM (B24P) is accepted too: its data blocks are found by content,
+blocks that differ (text, fonts) are taken over partly, and the log reports
+what did not match. The game text is the English text of the decompilation in
+either case. At start-up the port reads graphics, maps and sounds from the
+ROM file (the first start scans it once and caches the offsets in
+`romindex.txt`).
 
 ## Features
 

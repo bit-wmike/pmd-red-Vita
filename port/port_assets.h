@@ -24,8 +24,12 @@ struct PortBlob {
     uint32_t romAddr;    /* 0x08xxxxxx if the decomp states it, else 0 */
     const uint32_t *holes; /* (offset, length) pairs, sorted */
     uint32_t holeCount;
+    const uint64_t *chunks; /* FNV-1a 64 per PORT_CHUNK bytes (blocks >= 2 chunks) */
+    uint32_t chunkCount;
     const char *name;
 };
+
+#define PORT_CHUNK 512
 
 extern const struct PortReloc gPortRelocs[];
 extern const unsigned gPortRelocCount;
@@ -34,7 +38,11 @@ extern const unsigned gPortBlobCount;
 
 /* C arrays (INCBIN) registered by the generated per-file functions. */
 void PortAsset_Add(const char *name, void *dst, unsigned size, unsigned long long hash,
-                   unsigned long long key1, int keyOff1, unsigned long long key2, int keyOff2);
+                   unsigned long long key1, int keyOff1, unsigned long long key2, int keyOff2,
+                   const unsigned long long *chunks, unsigned chunkCount);
+/* After Port_LoadRom: blocks taken over only partly (another ROM version)
+ * and blocks not found at all. */
+extern unsigned gPortAssetsPartial, gPortAssetsMissing;
 void PortAssets_RegisterAll(void);
 
 #endif

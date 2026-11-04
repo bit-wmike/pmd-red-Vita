@@ -33,6 +33,7 @@
 #include <sched.h>
 
 #include "port/port.h"
+#include "port/port_assets.h"
 #include "port/port_view.h"
 #include "port/port_config.h"
 #include "port/port_game.h"
@@ -630,12 +631,14 @@ static unsigned char *LoadRom(size_t *outSize, int *foundAny)
         if (fd >= 0 && rom) {
             int n = sceIoRead(fd, rom, PORT_ROM_SIZE);
             sceIoClose(fd);
-            if (n == (int)PORT_ROM_SIZE && Port_RomMatches(rom, (size_t)n)) {
-                Platform_Log("rom: using %s\n", ent.d_name);
+            if (n == (int)PORT_ROM_SIZE && Port_RomVersion(rom, (size_t)n) != 0) {
+                Platform_Log("rom: using %s (game code B24%c, %s)\n", ent.d_name, Port_RomVersion(rom, (size_t)n),
+                             Port_RomMatches(rom, (size_t)n) ? "USA 1.0, the version this port is made from"
+                                                              : "another version: data is matched by content");
                 *outSize = (size_t)n;
                 break;
             }
-            Platform_Log("rom: %s is not Pokemon Mystery Dungeon - Red Rescue Team (USA)\n", ent.d_name);
+            Platform_Log("rom: %s is not Pokemon Mystery Dungeon - Red Rescue Team\n", ent.d_name);
         }
         free(rom);
         rom = NULL;
@@ -712,10 +715,10 @@ int main(int argc, char **argv)
     rom = LoadRom(&romSize, &foundAny);
     if (!rom) {
         ShowMessage("ROM nicht gefunden / ROM not found",
-                    foundAny ? "Die .gba-Datei in ux0:data/pmd/ ist nicht Pokemon Mystery Dungeon - Red Rescue Team (USA).\n"
-                               "The .gba file in ux0:data/pmd/ is not Pokemon Mystery Dungeon - Red Rescue Team (USA)."
-                             : "Kopiere deine ROM (Pokemon Mystery Dungeon - Red Rescue Team, USA) nach ux0:data/pmd/\n"
-                               "Copy your ROM (Pokemon Mystery Dungeon - Red Rescue Team, USA) to ux0:data/pmd/");
+                    foundAny ? "Die .gba-Datei in ux0:data/pmd/ ist nicht Pokemon Mystery Dungeon - Red Rescue Team (32 MiB).\n"
+                               "The .gba file in ux0:data/pmd/ is not Pokemon Mystery Dungeon - Red Rescue Team (32 MiB)."
+                             : "Kopiere deine ROM (Pokemon Mystery Dungeon - Red Rescue Team, USA oder Europa) nach ux0:data/pmd/\n"
+                               "Copy your ROM (Pokemon Mystery Dungeon - Red Rescue Team, USA or Europe) to ux0:data/pmd/");
         sceKernelExitProcess(0);
         return 0;
     }
@@ -724,6 +727,15 @@ int main(int argc, char **argv)
         ShowMessage("Fehler / Error", "Die Spieldaten konnten nicht geladen werden.\nGame data could not be loaded.");
         sceKernelExitProcess(0);
         return 0;
+    }
+    if (gPortAssetsMissing || gPortAssetsPartial) {
+        char buf[300];
+        snprintf(buf, sizeof(buf),
+                 "Andere ROM-Version: %u Datenbloecke nur teilweise, %u nicht gefunden (siehe log.txt).\n"
+                 "Other ROM version: %u data blocks matched partly, %u not found (see log.txt).",
+                 gPortAssetsPartial, gPortAssetsMissing, gPortAssetsPartial, gPortAssetsMissing);
+        ShowProgress(buf);
+        sceKernelDelayThread(4 * 1000 * 1000);
     }
 
     AudioInit();

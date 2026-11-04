@@ -287,7 +287,8 @@ int main(int argc, char **argv)
         return 1;
     }
     if (!Port_RomMatches(rom, romSize))
-        fprintf(stderr, "host: warning: %s is not the US 1.0 ROM (sha1 9f4cfc5b...)\n", argv[1]);
+        fprintf(stderr, "host: note: %s is not the US 1.0 ROM (game code B24%c); data is matched by content\n", argv[1],
+                Port_RomVersion(rom, romSize) ? Port_RomVersion(rom, romSize) : '?');
     if (Port_LoadRom(rom, romSize) != 0) {
         fprintf(stderr, "host: cannot load the game data\n");
         return 1;

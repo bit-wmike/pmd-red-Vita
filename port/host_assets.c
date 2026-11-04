@@ -37,10 +37,14 @@ struct Asset {
     int32_t keyOff1, keyOff2;
     const uint32_t *holes;
     uint32_t holeCount;
+    const uint64_t *chunks;
+    uint32_t chunkCount;
     uint32_t romAddr; /* 0 = unknown */
-    int found;
+    int found;        /* 1 = exact, 2 = partial */
     int next; /* hash chain */
 };
+
+unsigned gPortAssetsPartial, gPortAssetsMissing;
 
 static struct Asset *sAssets;
 static size_t sAssetCount, sAssetCap;
@@ -56,7 +60,8 @@ static struct Asset *NewAsset(void)
 }
 
 void PortAsset_Add(const char *name, void *dst, unsigned size, unsigned long long hash,
-                   unsigned long long key1, int keyOff1, unsigned long long key2, int keyOff2)
+                   unsigned long long key1, int keyOff1, unsigned long long key2, int keyOff2,
+                   const unsigned long long *chunks, unsigned chunkCount)
 {
     struct Asset *a = NewAsset();
     a->name = name;
@@ -67,6 +72,8 @@ void PortAsset_Add(const char *name, void *dst, unsigned size, unsigned long lon
     a->keyOff1 = keyOff1;
     a->key2 = key2;
     a->keyOff2 = keyOff2;
+    a->chunks = (const uint64_t *)chunks;
+    a->chunkCount = chunkCount;
 }
 
 /* ---- SHA-1 (to recognise the supported ROM) ---- */
@@ -141,6 +148,17 @@ int Port_RomMatches(const void *rom, size_t size)
     return memcmp(sha, sExpectedSha1, 20) == 0;
 }
 
+int Port_RomVersion(const void *rom, size_t size)
+{
+    const unsigned char *r = (const unsigned char *)rom;
+    if (size != PORT_ROM_SIZE)
+        return 0;
+    /* cartridge header: game code at 0xAC, "B24x" for Red Rescue Team */
+    if (r[0xAC] != 'B' || r[0xAD] != '2' || r[0xAE] != '4')
+        return 0;
+    return r[0xAF];
+}
+
 /* ---- locating the data ---- */
 
 static uint64_t Fnv64(const unsigned char *p, size_t n)
@@ -191,6 +209,35 @@ static int TryAt(struct Asset *a, uint32_t p)
     return Verify(a, p);
 }
 
+/* Another ROM version: the block may differ in places (text, fonts). Take
+ * the candidate if at least half of its chunks match; the mismatching
+ * chunks keep the ROM's bytes, which beats zeros. */
+static int TryPartial(struct Asset *a, uint32_t p)
+{
+    uint32_t i, ok = 0;
+    if (a->found || a->chunkCount == 0 || (uint64_t)p + a->size > gHostRomSize)
+        return 0;
+    memcpy(a->dst, gHostRom + p, a->size);
+    for (i = 0; i < a->holeCount; i++) {
+        uint32_t off = a->holes[i * 2], len = a->holes[i * 2 + 1];
+        if (off + len <= a->size)
+            memset(a->dst + off, 0, len);
+    }
+    for (i = 0; i < a->chunkCount; i++) {
+        uint32_t off = i * PORT_CHUNK, len = a->size - off < PORT_CHUNK ? a->size - off : PORT_CHUNK;
+        if (Fnv64(a->dst + off, len) == a->chunks[i])
+            ok++;
+    }
+    if (ok * 2 < a->chunkCount) {
+        memset(a->dst, 0, a->size);
+        return 0;
+    }
+    Platform_Log("assets: %s taken over partly (%u of %u chunks)\n", a->name, ok, a->chunkCount);
+    a->romAddr = p + 0x08000000u;
+    a->found = 2;
+    return 1;
+}
+
 #define TABLE_BITS 15
 
 static int *sBuckets;
@@ -212,7 +259,7 @@ static unsigned Bucket(uint64_t k)
     return (unsigned)(k >> (64 - TABLE_BITS));
 }
 
-static void Scan(int step)
+static void Scan(int step, int partial)
 {
     size_t i, n = 0;
     uint32_t q, end;
@@ -222,7 +269,7 @@ static void Scan(int step)
     for (i = 0; i < sAssetCount; i++) {
         struct Asset *a = &sAssets[i];
         unsigned b;
-        if (a->found || a->keyOff1 < 0)
+        if (a->found || a->keyOff1 < 0 || (partial && a->chunkCount == 0))
             continue;
         b = Bucket(a->key1);
         a->next = sBuckets[b];
@@ -237,8 +284,12 @@ static void Scan(int step)
         int idx = sBuckets[Bucket(k)];
         while (idx >= 0) {
             struct Asset *a = &sAssets[idx];
-            if (!a->found && a->key1 == k && q >= (uint32_t)a->keyOff1)
-                TryAt(a, q - (uint32_t)a->keyOff1);
+            if (!a->found && a->key1 == k && q >= (uint32_t)a->keyOff1) {
+                if (partial)
+                    TryPartial(a, q - (uint32_t)a->keyOff1);
+                else
+                    TryAt(a, q - (uint32_t)a->keyOff1);
+            }
             idx = a->next;
         }
     }
@@ -293,7 +344,8 @@ static void LoadIndex(void)
             struct Asset *a = &sAssets[idx];
             if (a->found || strcmp(a->name, line) != 0)
                 continue;
-            if (addr >= 0x08000000ul && Verify(a, (uint32_t)(addr - 0x08000000ul)))
+            if (addr >= 0x08000000ul &&
+                (Verify(a, (uint32_t)(addr - 0x08000000ul)) || TryPartial(a, (uint32_t)(addr - 0x08000000ul))))
                 hits++;
             break;
         }
@@ -362,6 +414,8 @@ int Port_LoadRom(unsigned char *rom, size_t size)
         a->keyOff2 = b->keyOff2;
         a->holes = b->holes;
         a->holeCount = b->holeCount;
+        a->chunks = b->chunks;
+        a->chunkCount = b->chunkCount;
         a->romAddr = b->romAddr;
     }
     /* the INCBIN arrays of the C files */
@@ -390,26 +444,40 @@ int Port_LoadRom(unsigned char *rom, size_t size)
             missing++;
     if (missing) {
         Platform_Log("assets: scanning the ROM for %u blocks\n", (unsigned)missing);
-        Scan(4);
+        Scan(4, 0);
         missing = 0;
         for (i = 0; i < sAssetCount; i++)
             if (!sAssets[i].found)
                 missing++;
         if (missing)
-            Scan(1);
+            Scan(1, 0);
+        missing = 0;
+        for (i = 0; i < sAssetCount; i++)
+            if (!sAssets[i].found)
+                missing++;
+        if (missing) {
+            /* another ROM version: accept blocks that match in most parts */
+            Platform_Log("assets: looking for partial matches of %u blocks\n", (unsigned)missing);
+            Scan(4, 1);
+        }
         SaveIndex();
     }
     missing = 0;
+    gPortAssetsPartial = 0;
     for (i = 0; i < sAssetCount; i++) {
+        if (sAssets[i].found == 2)
+            gPortAssetsPartial++;
         if (!sAssets[i].found) {
-            if (missing < 20)
+            if (missing < 40)
                 Platform_Log("assets: not found in the ROM: %s (%u bytes)\n", sAssets[i].name, sAssets[i].size);
             missing++;
         }
     }
+    gPortAssetsMissing = (unsigned)missing;
     Relocate();
-    Platform_Log("assets: %u blocks, %u by address, %u missing, %u relocations, %u ms\n", (unsigned)sAssetCount,
-                 (unsigned)known, (unsigned)missing, gPortRelocCount, (unsigned)((Platform_TimeUs() - t0) / 1000));
+    Platform_Log("assets: %u blocks, %u by address, %u partial, %u missing, %u relocations, %u ms\n",
+                 (unsigned)sAssetCount, (unsigned)known, gPortAssetsPartial, (unsigned)missing, gPortRelocCount,
+                 (unsigned)((Platform_TimeUs() - t0) / 1000));
     free(sAssets);
     sAssets = NULL;
     sAssetCount = sAssetCap = 0;

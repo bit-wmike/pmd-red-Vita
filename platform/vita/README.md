@@ -3,10 +3,15 @@
 ## Installation
 
 1. `MysteryDungeonRed_Vita_<version>.vpk` mit VitaShell installieren.
-2. Deine ROM von *Pokémon Mystery Dungeon: Red Rescue Team* (USA) nach
-   `ux0:data/pmd/` kopieren. Der Dateiname ist egal, Endung `.gba`.
-   Erkannt wird sie an der Prüfsumme
-   (SHA-1 `9f4cfc5b5f4859d17169a485462e977c7aac2b89`, 32 MiB).
+2. Deine ROM von *Pokémon Mystery Dungeon: Red Rescue Team* nach
+   `ux0:data/pmd/` kopieren. Der Dateiname ist egal, Endung `.gba`, 32 MiB.
+   Der Port ist aus der US-Version gebaut (SHA-1
+   `9f4cfc5b5f4859d17169a485462e977c7aac2b89`); die Europa-ROM (B24P) wird
+   ebenfalls angenommen. Ihre Datenblöcke werden über den Inhalt gefunden,
+   abweichende Blöcke (Texte, Schriften) teilweise übernommen; ein Hinweis beim
+   Start und `log.txt` zeigen, wie viele Blöcke nur teilweise oder gar nicht
+   passten. Der Spieltext ist in beiden Fällen der englische Text der
+   Dekompilierung.
 3. Starten. Beim ersten Start durchsucht der Port die ROM einmal nach den
    Spieldaten (einige Sekunden) und merkt sich die Fundstellen in
    `romindex.txt`; danach startet er sofort.

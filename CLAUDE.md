@@ -95,7 +95,14 @@ Schalter: `PMD_SHOT=f1,f2` / `PMD_SHOT_EVERY=n` (PPM), `PMD_VIEW=0/1/2`, `PMD_WA
   PPMs** (`cmp`); (2) Renderer-Änderungen Bild für Bild gegen die alte Version vergleichen;
   (3) Vita-Build ohne Fehler.
 
-## Stand (0.1.1, 04.11.2026)
+## Stand (0.1.3, 04.11.2026)
+- 0.1.3: Mikes ROM ist die **Europa-Version** (B24P). Der Port nimmt sie an (`Port_RomVersion`
+  prüft den Spielcode im Header), sucht alle Blöcke per Inhalt und übernimmt abweichende
+  Blöcke teilweise (Chunk-Hashes à 512 Byte, `TryPartial`, ≥ 50 % Treffer; Test:
+  `fake_rom.py out.gba 1 7` verfälscht jeden 7. Block). Beim Start zeigt die Vita, wie viele
+  Blöcke teilweise/gar nicht passten; `log.txt` nennt die ersten 40 Namen. Erster echter
+  Lauf mit der EU-ROM steht aus – falls Schriften/Texte fehlen, Blocknamen aus dem Log prüfen.
+  LiveArea-Grafik neu im TMC-Stil (Rettungsabzeichen, flach), Weitsicht 424×240.
 - 0.1.1: Weitsicht/Breitbild als **konstantes Bild in allen Szenen** (Szenen ohne Karte:
   GBA-Bild mittig, Ränder schwarz; `sContentW/H` = Kartenanteil), Cheats nur noch
   mechanik-schonend (Erfahrung ×1–4 in `AddExpPoints`, kein Hunger in
