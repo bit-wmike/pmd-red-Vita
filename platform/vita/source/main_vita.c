@@ -357,7 +357,7 @@ static const char *OnOff(int v)
 
 static void MenuLine(int item, char *buf, size_t size)
 {
-    static const char *views[] = {"GBA (240x160)", "Breitbild (282x160)", "Weitsicht (400x240)"};
+    static const char *views[] = {"GBA (240x160)", "Breitbild (282x160)", "Weitsicht (424x240)"};
     static const char *styles[] = {"Weich", "Scharf", "Pixelgenau"};
     switch (item) {
         case MI_VIEW: snprintf(buf, size, "Ansicht: %s", views[gPortConfig.viewMode]); break;

@@ -5,13 +5,13 @@
 enum {
     PORT_VIEW_GBA = 0,  /* 240x160 */
     PORT_VIEW_WIDE = 1, /* 16:9 at the GBA's 160 lines, same zoom */
-    PORT_VIEW_FULL = 2  /* "Weitsicht": 400x240, more of the map in both directions */
+    PORT_VIEW_FULL = 2  /* "Weitsicht": 424x240 (exactly 16:9), more of the map in both directions */
 };
 
 #define PORT_VIEW_WIDE_W 282
-#define PORT_VIEW_FULL_W 400
+#define PORT_VIEW_FULL_W 424
 #define PORT_VIEW_FULL_H 240
-#define PORT_VIEW_MAX_W 400
+#define PORT_VIEW_MAX_W 424
 #define PORT_VIEW_MAX_H 240
 
 /* What the game is showing (reported by the game's frame functions). */

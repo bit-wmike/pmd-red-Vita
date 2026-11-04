@@ -15,7 +15,7 @@ once and caches the offsets in `romindex.txt`).
 
 ## Features
 
-- Wide view (282×160) and full view (400×240, default, like the Minish Cap and
+- Wide view (282×160) and full view (424×240, default, like the Minish Cap and
   Zero Mission ports): the frame size never changes. In dungeons, towns, the
   base, cutscenes, the world map and the friend areas map the port draws the
   map around the GBA screen from the game's own map data; the HUD and text

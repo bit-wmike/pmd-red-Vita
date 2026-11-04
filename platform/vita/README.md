@@ -39,7 +39,7 @@ Schnellvorlauf, Rücktouch), Schnellspeichern / -laden und zwei sanfte Cheats:
 nur das Tempo des Spiels, nichts an der Mechanik. Die Einstellungen landen in
 `settings.ini`. Die Versionsnummer steht oben im Menü und im LiveArea.
 
-Die **Weitsicht** (400×240) ist immer an: die Bildgröße und der Zoom ändern
+Die **Weitsicht** (424×240) ist immer an: die Bildgröße und der Zoom ändern
 sich nie. In Dungeons, in den Orten (Platz, Basis, Zwischensequenzen), auf der
 Weltkarte und der Freundesareal-Karte zeigen die Ränder mehr von der Karte;
 Texte, HUD und Menüs bleiben an ihrem Platz. Auf allen anderen Bildschirmen

@@ -103,7 +103,7 @@ enum {
  * cells whenever Full View is disabled. */
 #define MODE1_WS_SHADOW_ROWS 32
 #define MODE1_WS_SHADOW_WIDE_COLS 7
-#define MODE1_WS_SHADOW_FULL_VIEW_COLS ((400 / 8) + 4)
+#define MODE1_WS_SHADOW_FULL_VIEW_COLS ((MODE1_GBA_WIDTH / 8) + 4)
 #if MODE1_GBA_WIDTH >= 400
 #define MODE1_WS_SHADOW_COLS MODE1_WS_SHADOW_FULL_VIEW_COLS
 #else

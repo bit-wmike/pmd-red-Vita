@@ -12,7 +12,7 @@ Zelda: The Minish Cap (`zelda-tmc-vita-port`) und Metroid: Zero Mission (`mzm-vi
   schickt `ux0:data/pmd/log.txt` (+ `log_prev.txt`), Screenshots, Spielstand (`pmd_red.sav`)
   und Schnellspeicherungen.
 - Mike nutzt Linux (Raspberry Pi 5), kein Windows.
-- „Breitbild“ heißt bei Mike fast immer die **Weitsicht** (Full View, 400×240).
+- „Breitbild“ heißt bei Mike fast immer die **Weitsicht** (Full View, 424×240).
 - Ziele: Weitsicht möglichst immer, konstanter Zoom, konstante 60 FPS (sonst stabile 30),
   Komfortfunktionen, Cheat-Menü, Touch/Rückseite. Versionsnummer in der App sichtbar
   (LiveArea-Bilder tragen sie, Port-Menü zeigt sie).
@@ -76,6 +76,8 @@ make -f Makefile.port TARGET=armhost -j4    # ARMv7, läuft unter qemu-arm (arm-
 - Cloud-Hinweise: `gcc-arm-linux-gnueabihf` und `gcc-multilib` schließen sich per apt aus –
   erst multilib, dann den Cross-Compiler installieren und `ln -s x86_64-linux-gnu/asm
   /usr/include/asm`. Nie `pkill -f` mit einem Muster, das die eigene Shell trifft.
+- Makefile.port kennt keine Header-Abhängigkeiten: nach Änderungen an `CPPFLAGS`, `port/*.h`
+  oder `port/ppu/include/*` das Build-Verzeichnis (`build/port-<target>`) löschen.
 - **Vita-GCC 15 ist strenger** → vor jeder Version `TARGET=vita` bauen. Der Präprozessor-Schritt
   braucht `-std=gnu11` (sonst `nullptr`-Fehler aus `stddef.h`).
 
@@ -100,7 +102,7 @@ Schalter: `PMD_SHOT=f1,f2` / `PMD_SHOT_EVERY=n` (PPM), `PMD_VIEW=0/1/2`, `PMD_WA
   `dungeon_turn_effects.c`), Vita-Tasten: Viereck = L+R, Dreieck = L+A, rechter Stick =
   R+Richtung, Fronttouch halten = Schnellvorlauf (alles im Menü umstellbar).
 - Host-, armhost- und Vita-Build laufen; auf der Pseudo-ROM bootet das Spiel durch Logos,
-  Titel und Intro bis in die Basis (Weitsicht 400×240 in der Basis geprüft, ARM = x86).
+  Titel und Intro bis in die Basis (Weitsicht 424×240 in der Basis geprüft, ARM = x86).
 - Weitsicht: Szenen-Hooks (`Port_ViewSceneFrame`) in Dungeon-/Ground-/Weltkarten-/
   Freundesareal-Frame; Kartenebenen (BG3, BG2 bei Zweischicht-Karten) werden vom Port aus
   `gDungeon`-Cels, `chunkMappings`/`tileMappings` bzw. den 64×64-Bildern im RAM gefüllt; BG0/BG1 (Text/HUD/Dunkelheit) am GBA-Rechteck,
@@ -118,6 +120,6 @@ Schalter: `PMD_SHOT=f1,f2` / `PMD_SHOT_EVERY=n` (PPM), `PMD_VIEW=0/1/2`, `PMD_WA
    (der Pseudo-ROM-Lauf erreicht sie nicht); Menüfenster darauf prüfen.
 3. Dungeon: `ShouldDisplayEntity` (±32 px) gilt auch für Logik – Monster/Items in den Rändern
    jenseits davon werden nicht gezeichnet; evtl. reine Render-Kopie einführen.
-4. Leistung messen (Vita: 400×240 Software-PPU mit 3 Threads; Old-3DS-Profil aktiv).
+4. Leistung messen (Vita: 424×240 Software-PPU mit 3 Threads; Old-3DS-Profil aktiv).
 5. Weitere sanfte Cheats (z. B. IQ-Multiplikator, Geld ×2) nur nach Rücksprache; Overlay/Karte
    wie beim TMC-Port.
