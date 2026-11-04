@@ -24,9 +24,11 @@ static struct Field sFields[] = {
     {"frame_rate_30", &gPortConfig.frameRate30, 0, 1},
     {"rear_touch", &gPortConfig.rearTouch, 0, 1},
     {"turbo", &gPortConfig.turbo, 0, 1},
-    {"cheat_hp", &gPortConfig.cheatHp, 0, 1},
-    {"cheat_belly", &gPortConfig.cheatBelly, 0, 1},
-    {"cheat_money", &gPortConfig.cheatMoney, 0, 1},
+    {"square_throw", &gPortConfig.squareThrow, 0, 1},
+    {"triangle_move", &gPortConfig.triangleMove, 0, 1},
+    {"right_stick_diagonal", &gPortConfig.rightStickDiag, 0, 1},
+    {"exp_multiplier", &gPortConfig.expMultiplier, 1, 4},
+    {"no_hunger", &gPortConfig.noHunger, 0, 1},
 };
 
 void Port_ConfigDefaults(void)
@@ -36,6 +38,11 @@ void Port_ConfigDefaults(void)
     gPortConfig.viewMode = PORT_VIEW_FULL;
     gPortConfig.displayStyle = PORT_STYLE_SHARP;
     gPortConfig.rearTouch = 1;
+    gPortConfig.turbo = 1;
+    gPortConfig.squareThrow = 1;
+    gPortConfig.triangleMove = 1;
+    gPortConfig.rightStickDiag = 1;
+    gPortConfig.expMultiplier = 1;
 }
 
 void Port_ConfigParse(const char *text)

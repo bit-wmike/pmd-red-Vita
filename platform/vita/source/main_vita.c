@@ -347,8 +347,8 @@ static void AudioInit(void)
 
 /* ---- menu (START + SELECT) ---- */
 
-enum { MI_VIEW, MI_STYLE, MI_FPS, MI_TURBO, MI_REAR, MI_QSAVE, MI_QLOAD, MI_CH_HP, MI_CH_BELLY, MI_CH_MONEY,
-       MI_BACK, MI_COUNT };
+enum { MI_VIEW, MI_STYLE, MI_FPS, MI_SQUARE, MI_TRIANGLE, MI_RSTICK, MI_TURBO, MI_REAR, MI_QSAVE, MI_QLOAD,
+       MI_CH_EXP, MI_CH_HUNGER, MI_BACK, MI_COUNT };
 
 static const char *OnOff(int v)
 {
@@ -363,13 +363,15 @@ static void MenuLine(int item, char *buf, size_t size)
         case MI_VIEW: snprintf(buf, size, "Ansicht: %s", views[gPortConfig.viewMode]); break;
         case MI_STYLE: snprintf(buf, size, "Bilddarstellung: %s", styles[gPortConfig.displayStyle]); break;
         case MI_FPS: snprintf(buf, size, "Bildrate: %s", gPortConfig.frameRate30 ? "30 (Spieltempo bleibt)" : "60"); break;
-        case MI_TURBO: snprintf(buf, size, "Dreieck halten = Schnellvorlauf: %s", OnOff(gPortConfig.turbo)); break;
+        case MI_SQUARE: snprintf(buf, size, "Viereck: %s", gPortConfig.squareThrow ? "Gegenstand werfen (L+R)" : "B"); break;
+        case MI_TRIANGLE: snprintf(buf, size, "Dreieck: %s", gPortConfig.triangleMove ? "Attacke einsetzen (L+A)" : "B"); break;
+        case MI_RSTICK: snprintf(buf, size, "Rechter Stick = diagonal gehen (R+Richtung): %s", OnOff(gPortConfig.rightStickDiag)); break;
+        case MI_TURBO: snprintf(buf, size, "Touchscreen halten = Schnellvorlauf: %s", OnOff(gPortConfig.turbo)); break;
         case MI_REAR: snprintf(buf, size, "Ruecktouch halten: links speichern, rechts laden: %s", OnOff(gPortConfig.rearTouch)); break;
         case MI_QSAVE: snprintf(buf, size, "Schnellspeichern"); break;
         case MI_QLOAD: snprintf(buf, size, "Schnellladen"); break;
-        case MI_CH_HP: snprintf(buf, size, "Cheat: KP des Anfuehrers unendlich: %s", OnOff(gPortConfig.cheatHp)); break;
-        case MI_CH_BELLY: snprintf(buf, size, "Cheat: Bauch immer voll: %s", OnOff(gPortConfig.cheatBelly)); break;
-        case MI_CH_MONEY: snprintf(buf, size, "Cheat: viel Geld: %s", OnOff(gPortConfig.cheatMoney)); break;
+        case MI_CH_EXP: snprintf(buf, size, "Erfahrung x%d", gPortConfig.expMultiplier); break;
+        case MI_CH_HUNGER: snprintf(buf, size, "Kein Hunger (Bauch sinkt nicht): %s", OnOff(gPortConfig.noHunger)); break;
         default: snprintf(buf, size, "Zurueck zum Spiel"); break;
     }
 }
@@ -386,11 +388,13 @@ static int MenuChange(int item, int d)
         case MI_VIEW: gPortConfig.viewMode = Wrap(gPortConfig.viewMode, d, 3); break;
         case MI_STYLE: gPortConfig.displayStyle = Wrap(gPortConfig.displayStyle, d, 3); break;
         case MI_FPS: gPortConfig.frameRate30 ^= 1; break;
+        case MI_SQUARE: gPortConfig.squareThrow ^= 1; break;
+        case MI_TRIANGLE: gPortConfig.triangleMove ^= 1; break;
+        case MI_RSTICK: gPortConfig.rightStickDiag ^= 1; break;
         case MI_TURBO: gPortConfig.turbo ^= 1; break;
         case MI_REAR: gPortConfig.rearTouch ^= 1; break;
-        case MI_CH_HP: gPortConfig.cheatHp ^= 1; break;
-        case MI_CH_BELLY: gPortConfig.cheatBelly ^= 1; break;
-        case MI_CH_MONEY: gPortConfig.cheatMoney ^= 1; break;
+        case MI_CH_EXP: gPortConfig.expMultiplier = 1 + Wrap(gPortConfig.expMultiplier - 1, d == 0 ? 1 : d, 4); break;
+        case MI_CH_HUNGER: gPortConfig.noHunger ^= 1; break;
         case MI_QSAVE:
             if (d == 0) { Port_RequestQuickSave(); return 1; }
             break;
@@ -448,9 +452,10 @@ static void RunMenu(void)
             break;
     }
     Port_ConfigSave();
-    Platform_Log("[ui] menu closed: view=%d style=%d fps30=%d turbo=%d rear=%d cheats=%d%d%d\n",
-                 gPortConfig.viewMode, gPortConfig.displayStyle, gPortConfig.frameRate30, gPortConfig.turbo,
-                 gPortConfig.rearTouch, gPortConfig.cheatHp, gPortConfig.cheatBelly, gPortConfig.cheatMoney);
+    Platform_Log("[ui] menu closed: view=%d style=%d fps30=%d square=%d triangle=%d rstick=%d turbo=%d rear=%d exp=x%d hunger=%d\n",
+                 gPortConfig.viewMode, gPortConfig.displayStyle, gPortConfig.frameRate30, gPortConfig.squareThrow,
+                 gPortConfig.triangleMove, gPortConfig.rightStickDiag, gPortConfig.turbo, gPortConfig.rearTouch,
+                 gPortConfig.expMultiplier, gPortConfig.noHunger);
     sAnchored = 0; /* the menu stalled the game: re-anchor the pacing */
 }
 
@@ -504,8 +509,10 @@ uint16_t Platform_PollKeys(void)
 
     if (pad.buttons & SCE_CTRL_CROSS) keys |= KEY_A;    /* confirm / attack */
     if (pad.buttons & SCE_CTRL_CIRCLE) keys |= KEY_B;   /* cancel / run */
-    if (pad.buttons & SCE_CTRL_SQUARE) keys |= KEY_B;
-    if (pad.buttons & SCE_CTRL_TRIANGLE) keys |= PORT_KEY_TURBO;
+    /* Square: throw the set item (the game's L+R), Triangle: use the set
+     * move (L+A); each can be turned back into a plain B in the menu. */
+    if (pad.buttons & SCE_CTRL_SQUARE) keys |= gPortConfig.squareThrow ? (KEY_L | KEY_R) : KEY_B;
+    if (pad.buttons & SCE_CTRL_TRIANGLE) keys |= gPortConfig.triangleMove ? (KEY_L | KEY_A) : KEY_B;
     if (pad.buttons & SCE_CTRL_LTRIGGER) keys |= KEY_L;
     if (pad.buttons & SCE_CTRL_RTRIGGER) keys |= KEY_R;
     if (pad.buttons & SCE_CTRL_START) keys |= KEY_START;
@@ -514,6 +521,23 @@ uint16_t Platform_PollKeys(void)
     if ((pad.buttons & SCE_CTRL_DOWN) || pad.ly > 128 + 64) keys |= KEY_DOWN;
     if ((pad.buttons & SCE_CTRL_LEFT) || pad.lx < 128 - 64) keys |= KEY_LEFT;
     if ((pad.buttons & SCE_CTRL_RIGHT) || pad.lx > 128 + 64) keys |= KEY_RIGHT;
+    /* Right stick: R + direction = diagonal moves / turning in place. */
+    if (gPortConfig.rightStickDiag) {
+        int dx = (int)pad.rx - 128, dy = (int)pad.ry - 128;
+        if (dx * dx + dy * dy > 64 * 64) {
+            keys |= KEY_R;
+            if (dy < -40) keys |= KEY_UP;
+            if (dy > 40) keys |= KEY_DOWN;
+            if (dx < -40) keys |= KEY_LEFT;
+            if (dx > 40) keys |= KEY_RIGHT;
+        }
+    }
+    /* Front touch held: fast forward. */
+    if (gPortConfig.turbo) {
+        SceTouchData t;
+        if (sceTouchPeek(SCE_TOUCH_PORT_FRONT, &t, 1) >= 1 && t.reportNum > 0)
+            keys |= PORT_KEY_TURBO;
+    }
     return keys;
 }
 
@@ -681,6 +705,7 @@ int main(int argc, char **argv)
 
     sceCtrlSetSamplingMode(SCE_CTRL_MODE_ANALOG);
     sceTouchSetSamplingState(SCE_TOUCH_PORT_BACK, SCE_TOUCH_SAMPLING_STATE_START);
+    sceTouchSetSamplingState(SCE_TOUCH_PORT_FRONT, SCE_TOUCH_SAMPLING_STATE_START);
     VideoInit();
     ShowProgress("ROM wird gelesen ... / reading the ROM ...");
 

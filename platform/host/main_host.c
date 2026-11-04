@@ -298,8 +298,10 @@ int main(int argc, char **argv)
         gPortConfig.viewMode = gPortViewMode = atoi(e);
     if (getenv("PMD_30FPS"))
         gPortConfig.frameRate30 = 1;
-    if (getenv("PMD_CHEATS"))
-        gPortConfig.cheatHp = gPortConfig.cheatBelly = gPortConfig.cheatMoney = 1;
+    if (getenv("PMD_CHEATS")) {
+        gPortConfig.expMultiplier = 4;
+        gPortConfig.noHunger = 1;
+    }
     Port_RunGame();
     return 0;
 }

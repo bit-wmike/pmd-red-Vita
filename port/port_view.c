@@ -2,9 +2,12 @@
  * Wide view and Full View ("Weitsicht") for the PMD port.
  *
  * The game keeps running for its 240x160 GBA screen: camera, scrolling,
- * logic and the HUD are untouched. During dungeon and ground (town, base,
- * cutscene) scenes the port shows a bigger window of the same map around
- * the GBA screen, which sits at (dx, dy) inside the window:
+ * logic and the HUD are untouched. The port always draws a frame of the
+ * chosen size (400x240 in Full View, 282x160 in the wide view), so the zoom
+ * never changes. The GBA screen sits at (dx, dy) inside it. In dungeon,
+ * ground (town, base, cutscene) and map scenes the margins show more of the
+ * same map; on every other screen (title, full-screen menus, pictures) the
+ * GBA picture is centred and the margins stay black:
  *
  *  - Map layers (BG3, BG2 on two-layer maps): the game's VRAM tilemaps are
  *    only 32x32 tiles and only filled around the GBA screen, so the port
@@ -58,6 +61,7 @@ extern const Tile *gCurTilesetOobTile;
 static int sActive;
 static int sWidth = PORT_GBA_W, sHeight = PORT_GBA_H;
 static int sDx, sDy;
+static int sContentW = PORT_GBA_W, sContentH = PORT_GBA_H; /* the part of the frame that shows the map */
 static int sScene, sSceneLatched;
 static uint32_t sSceneFrame;
 
@@ -120,10 +124,6 @@ int Port_ViewHeight(void)
 
 int Port_ViewZoomHeight(void)
 {
-    /* Constant zoom in Full View during scenes: a frame that falls back to
-     * the GBA size is shown at the same scale, with a border. */
-    if (gPortViewMode == PORT_VIEW_FULL && sSceneLatched != PORT_SCENE_NONE)
-        return PORT_VIEW_FULL_H;
     return Port_ViewHeight();
 }
 
@@ -202,80 +202,82 @@ void Port_ViewBeforeLogicEnd(void)
  * written are what the next rendered frame shows. */
 void Port_ViewOnVBlank(void)
 {
-    int w, h;
+    int w, h, cw, ch;
     int camX = 0, camY = 0, mapW = 0, mapH = 0, wrap = 0;
 
     /* A scene stays current until another frame function reports. */
     sSceneLatched = sScene;
     SizeForMode(gPortViewMode, &w, &h);
-    sActive = (w != PORT_GBA_W || h != PORT_GBA_H) && sSceneLatched != PORT_SCENE_NONE;
-    if (sActive && sSceneLatched == PORT_SCENE_DUNGEON && gDungeon == NULL)
-        sActive = 0;
-    if (sActive && sSceneLatched == PORT_SCENE_WORLDMAP) {
-        struct WorldMap *m = Port_WorldMap();
-        if (m == NULL)
-            sActive = 0;
-        else {
-            camX = m->bgPos.x;
-            camY = m->bgPos.y;
-        }
-        mapW = PICTURE_W;
-        mapH = PICTURE_H;
-    }
-    if (sActive && sSceneLatched == PORT_SCENE_FRIENDMAP) {
-        if (gFriendAreasMapPtr == NULL)
-            sActive = 0;
-        else {
-            camX = gFriendAreasMapPtr->bgPos.x;
-            camY = gFriendAreasMapPtr->bgPos.y;
-        }
-        mapW = PICTURE_W;
-        mapH = PICTURE_H;
-    }
-    if (sActive && sSceneLatched == PORT_SCENE_GROUND) {
-        if (!GroundInfo(&camX, &camY, &mapW, &mapH, &wrap))
-            sActive = 0;
-        else if (!wrap) {
-            /* A map made for the GBA screen in one direction (logos,
-             * fixed pictures) stays at the GBA size in both. */
-            if (mapW <= PORT_GBA_W || mapH <= PORT_GBA_H) {
-                w = PORT_GBA_W;
-                h = PORT_GBA_H;
-            } else {
-                w = ClampToRoom(w, mapW, PORT_GBA_W);
-                h = ClampToRoom(h, mapH, PORT_GBA_H);
-            }
-            if (w == PORT_GBA_W && h == PORT_GBA_H)
-                sActive = 0;
-        }
-    }
-    if (!sActive) {
-        w = PORT_GBA_W;
-        h = PORT_GBA_H;
-    }
+    sActive = (w != PORT_GBA_W || h != PORT_GBA_H);
     sWidth = w;
     sHeight = h;
-    if (sActive && (sSceneLatched == PORT_SCENE_WORLDMAP || sSceneLatched == PORT_SCENE_FRIENDMAP)) {
-        w = ClampToRoom(w, mapW, PORT_GBA_W);
-        h = ClampToRoom(h, mapH, PORT_GBA_H);
-        sWidth = w;
-        sHeight = h;
-        sDx = WindowOffset(camX, PORT_GBA_W, w, mapW);
-        sDy = WindowOffset(camY, PORT_GBA_H, h, mapH);
-    } else if (sActive && sSceneLatched == PORT_SCENE_GROUND && !wrap) {
-        sDx = WindowOffset(camX, PORT_GBA_W, w, mapW);
-        sDy = WindowOffset(camY, PORT_GBA_H, h, mapH);
-    } else if (sActive) {
-        sDx = (w - PORT_GBA_W) / 2;
-        sDy = (h - PORT_GBA_H) / 2;
-    } else {
+
+    /* The map's extent decides how much of the frame shows the world;
+     * the rest of the frame stays black and the content is centred. */
+    cw = PORT_GBA_W;
+    ch = PORT_GBA_H;
+    if (sActive) {
+        switch (sSceneLatched) {
+            case PORT_SCENE_DUNGEON:
+                if (gDungeon != NULL) {
+                    cw = w;
+                    ch = h;
+                }
+                break;
+            case PORT_SCENE_GROUND:
+                if (GroundInfo(&camX, &camY, &mapW, &mapH, &wrap)) {
+                    if (wrap) {
+                        cw = w;
+                        ch = h;
+                    } else if (mapW > PORT_GBA_W && mapH > PORT_GBA_H) {
+                        /* a map made for the GBA screen in one direction
+                         * (logos, fixed pictures) stays at the GBA size */
+                        cw = ClampToRoom(w, mapW, PORT_GBA_W);
+                        ch = ClampToRoom(h, mapH, PORT_GBA_H);
+                    }
+                }
+                break;
+            case PORT_SCENE_WORLDMAP:
+            case PORT_SCENE_FRIENDMAP: {
+                struct WorldMap *m = Port_WorldMap();
+                if (sSceneLatched == PORT_SCENE_WORLDMAP && m != NULL) {
+                    camX = m->bgPos.x;
+                    camY = m->bgPos.y;
+                } else if (sSceneLatched == PORT_SCENE_FRIENDMAP && gFriendAreasMapPtr != NULL) {
+                    camX = gFriendAreasMapPtr->bgPos.x;
+                    camY = gFriendAreasMapPtr->bgPos.y;
+                } else {
+                    break;
+                }
+                mapW = PICTURE_W;
+                mapH = PICTURE_H;
+                cw = ClampToRoom(w, mapW, PORT_GBA_W);
+                ch = ClampToRoom(h, mapH, PORT_GBA_H);
+                break;
+            }
+            default:
+                break;
+        }
+    }
+    sContentW = cw;
+    sContentH = ch;
+    if (!sActive) {
         sDx = sDy = 0;
+    } else if (mapW > 0 && !wrap && cw > PORT_GBA_W) {
+        /* the window follows the camera and stops at the map's edges */
+        sDx = (w - cw) / 2 + WindowOffset(camX, PORT_GBA_W, cw, mapW);
+        sDy = (h - ch) / 2 + WindowOffset(camY, PORT_GBA_H, ch, mapH);
+    } else {
+        sDx = (w - cw) / 2 + (cw - PORT_GBA_W) / 2;
+        sDy = (h - ch) / 2 + (ch - PORT_GBA_H) / 2;
     }
 
-    gPortViewMarginLeft = sActive ? sDx : 0;
-    gPortViewMarginRight = sActive ? w - PORT_GBA_W - sDx : 0;
-    gPortViewMarginTop = sActive ? sDy : 0;
-    gPortViewMarginBottom = sActive ? h - PORT_GBA_H - sDy : 0;
+    /* The logic frame that starts now checks visibility against the
+     * content window. */
+    gPortViewMarginLeft = sActive ? sDx - (w - cw) / 2 : 0;
+    gPortViewMarginRight = sActive ? cw - PORT_GBA_W - gPortViewMarginLeft : 0;
+    gPortViewMarginTop = sActive ? sDy - (h - ch) / 2 : 0;
+    gPortViewMarginBottom = sActive ? ch - PORT_GBA_H - gPortViewMarginTop : 0;
 }
 
 /* ------------------------------------------------------- map layers */
@@ -409,24 +411,25 @@ static void FillPicture(int bg, const u16 (*map)[64], int x0, int y0, int cols)
 static void FillUi(int bg, uint16_t outside, int cols)
 {
     const uint16_t *vram = (const uint16_t *)(gHostVram + 0x6000 + bg * 0x800);
-    int fine = (-sDx) & 7;
+    int hofs = IO16(0x10 + bg * 4) & 0x1FF, vofs = IO16(0x12 + bg * 4) & 0x1FF;
+    int fine = (hofs - sDx) & 7;
     uint16_t *shadow = sShadow[bg];
     int r, c;
 
     for (r = 0; r < 32; r++) {
-        /* ring row r holds GBA tile row r for rows 0..19 (160 lines);
-         * the other rows lie above/below the GBA screen */
+        /* ring row r is VRAM tile row r; its top GBA line is 8r - vofs */
         uint16_t *row = shadow + r * SHADOW_COLS;
-        int gbaRow = r < 20 ? r : -1;
+        int gy = ((8 * r - vofs) % 256 + 256) % 256;
+        int rowVisible = gy < PORT_GBA_H || gy > 248;
         for (c = 0; c < cols; c++) {
             int gx = 8 * c - fine - sDx; /* GBA x of the column's first pixel */
-            int gcol = gx >> 3;
+            int vcol = ((gx + hofs) >> 3) & 31;
             /* BG0 column 0 holds the game's black edge tile (0x279), a
              * mask for the GBA screen border: not part of the picture. */
-            if (gbaRow < 0 || gcol < 0 || gcol >= 30 || (bg == 0 && gcol == 0))
+            if (!rowVisible || gx <= -8 || gx >= PORT_GBA_W || (bg == 0 && hofs == 0 && vcol == 0))
                 row[c] = outside;
             else
-                row[c] = vram[gbaRow * 32 + gcol];
+                row[c] = vram[r * 32 + vcol];
         }
     }
 }
@@ -460,7 +463,7 @@ static void DumpState(void)
     }
     if ((int)Port_FrameCounter() != dumpFrame)
         return;
-    Platform_Log("view: scene=%d size=%dx%d dx=%d dy=%d\n", sSceneLatched, sWidth, sHeight, sDx, sDy);
+    Platform_Log("view: scene=%d size=%dx%d content=%dx%d dx=%d dy=%d\n", sSceneLatched, sWidth, sHeight, sContentW, sContentH, sDx, sDy);
     for (i = 0; i < 128; i++) {
         u16 a0 = *(u16 *)(gHostOam + i * 8), a1 = *(u16 *)(gHostOam + i * 8 + 2);
         if ((a0 & 0x300) == 0x200)
@@ -504,7 +507,15 @@ void Port_ViewBeforeRender(int *width, int *height)
     ShadowSet(0, 1);
     ShadowSet(1, 1);
 
-    if (sSceneLatched == PORT_SCENE_DUNGEON) {
+    if (sContentW == PORT_GBA_W && sContentH == PORT_GBA_H) {
+        /* no map around the GBA screen: the whole picture is UI */
+        for (i = 2; i < 4; i++) {
+            virtuappu_mode1_bg_dx[i] = (-sDx) & 0x1FF;
+            virtuappu_mode1_bg_dy[i] = (-sDy) & 0x1FF;
+            FillUi(i, BLANK_ENTRY, cols);
+            ShadowSet(i, 1);
+        }
+    } else if (sSceneLatched == PORT_SCENE_DUNGEON && gDungeon != NULL) {
         const Dungeon *dungeon = gDungeon;
         int x0 = dungeon->unk181e8.cameraPixelPos.x - sDx;
         int y0 = dungeon->unk181e8.cameraPixelPos.y - (int)dungeon->unk181e8.unk181FC - sDy;
@@ -538,7 +549,7 @@ void Port_ViewBeforeRender(int *width, int *height)
         ShadowSet(3, 1);
         WorldScroll(2, x0, y0);
         WorldScroll(3, x0, y0);
-    } else {
+    } else if (sSceneLatched == PORT_SCENE_GROUND && gGroundMapDungeon_3001B70 != NULL) {
         GroundBg *g = gGroundMapDungeon_3001B70;
         int ctx, k, bg2Done = 0;
         for (ctx = 0; ctx < g->unk474; ctx++) {

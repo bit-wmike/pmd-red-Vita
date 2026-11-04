@@ -19,26 +19,32 @@ Start aus deiner ROM.
 | Vita | Spiel |
 |------|-------|
 | Kreuz | A (bestätigen, angreifen) |
-| Kreis / Viereck | B (abbrechen, rennen) |
-| L / R | L / R |
+| Kreis | B (abbrechen; B + Richtung = rennen) |
+| Viereck | Gesetzten Gegenstand werfen (L+R im Spiel; im Menü auf B umstellbar) |
+| Dreieck | Gesetzte Attacke einsetzen (L+A im Spiel; im Menü auf B umstellbar) |
+| L / R | L / R (R + Richtung = diagonal gehen / umdrehen) |
 | Steuerkreuz / linker Stick | Bewegen |
-| START / SELECT | Menü / Karte wie auf dem GBA |
-| Dreieck halten | Schnellvorlauf (wenn im Port-Menü eingeschaltet) |
+| Rechter Stick | Diagonal gehen (R + Richtung), abschaltbar |
+| START / SELECT | wie auf dem GBA (SELECT: Etagenkarte, START: Drehmodus) |
+| Touchscreen halten | Schnellvorlauf (abschaltbar) |
 | START + SELECT | Port-Menü |
 | Rücktouch halten (wenn an) | links: schnellspeichern, rechts: schnellladen |
 
 ## Menü (START + SELECT)
 
 Ansicht (GBA, Breitbild, Weitsicht), Bilddarstellung (Weich, Scharf,
-Pixelgenau), Bildrate 60/30, Schnellvorlauf, Rücktouch, Schnellspeichern /
--laden und Cheats (KP des Anführers, Bauch, Geld). Die Einstellungen landen
-in `settings.ini`. Die Versionsnummer steht oben im Menü und im LiveArea.
+Pixelgenau), Bildrate 60/30, Tastenbelegung (Viereck, Dreieck, rechter Stick,
+Schnellvorlauf, Rücktouch), Schnellspeichern / -laden und zwei sanfte Cheats:
+**Erfahrung ×1–×4** und **kein Hunger** (der Bauch sinkt nicht). Beide ändern
+nur das Tempo des Spiels, nichts an der Mechanik. Die Einstellungen landen in
+`settings.ini`. Die Versionsnummer steht oben im Menü und im LiveArea.
 
-Die **Weitsicht** (400×240) zeigt in Dungeons und in den Orten (Platz, Basis,
-Zwischensequenzen) mehr von der Karte; Texte, HUD und Menüs bleiben an ihrem
-Platz. Titelbild, Karten und Vollbildmenüs bleiben bei 240×160. Karten, die
-kleiner als das Fenster sind, bekommen einen schmaleren Rahmen mit gleichem
-Zoom.
+Die **Weitsicht** (400×240) ist immer an: die Bildgröße und der Zoom ändern
+sich nie. In Dungeons, in den Orten (Platz, Basis, Zwischensequenzen), auf der
+Weltkarte und der Freundesareal-Karte zeigen die Ränder mehr von der Karte;
+Texte, HUD und Menüs bleiben an ihrem Platz. Auf allen anderen Bildschirmen
+(Titel, Vollbildmenüs, feste Bilder) sitzt das GBA-Bild mittig, die Ränder
+bleiben schwarz.
 
 Schnellspeichern geht nur im laufenden Spiel (Dungeon oder Ort). Eine
 Schnellspeicherung gehört zu genau einer Version des Ports; nach einem

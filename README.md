@@ -16,12 +16,17 @@ once and caches the offsets in `romindex.txt`).
 ## Features
 
 - Wide view (282×160) and full view (400×240, default, like the Minish Cap and
-  Zero Mission ports) with a fixed zoom in dungeons and in the towns/base
-  scenes: the port draws the map around the GBA screen from the game's own map
-  data, the HUD and text boxes stay where they are.
+  Zero Mission ports): the frame size never changes. In dungeons, towns, the
+  base, cutscenes, the world map and the friend areas map the port draws the
+  map around the GBA screen from the game's own map data; the HUD and text
+  boxes stay where they are. Every other screen is centred in the frame.
+- Vita buttons: Square throws the set item (the game's L+R), Triangle uses
+  the set move (L+A), the right stick moves diagonally (R + direction),
+  holding the touch screen fast-forwards, the rear touch quick-saves/loads.
 - In-game menu (START + SELECT): view, display style (smooth / sharp /
-  pixel), 30 fps mode, fast forward on Triangle, rear touch quick save/load,
-  cheats (leader HP, belly, money). Settings in `settings.ini`.
+  pixel), 30 fps mode, button options, quick save/load, and two gentle
+  cheats: an experience multiplier (×1–×4) and no hunger. Settings in
+  `settings.ini`.
 - Quick save / quick load (a snapshot of the whole game state).
 - Frame pacing that skips drawing a frame instead of slowing the game down.
 - Saves (`pmd_red.sav`, 128 KiB) are compatible with GBA emulators.

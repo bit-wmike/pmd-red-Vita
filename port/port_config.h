@@ -16,12 +16,13 @@ struct PortConfig {
     int displayStyle;    /* PORT_STYLE_* */
     int frameRate30;     /* render every second frame (game speed unchanged) */
     int rearTouch;       /* rear touch: left = quick save, right = quick load */
-    int turbo;           /* R trigger held = fast forward (host: TMC_FAST) */
-    /* cheats */
-    int cheatHp;         /* leader's HP stays full */
-    int cheatBelly;      /* belly stays full */
-    int cheatMoney;      /* 99999 Poké */
-    int cheatNoHunger;   /* same as belly, kept for the ini */
+    int turbo;           /* fast forward allowed (front touch held / host key) */
+    int squareThrow;     /* Square = L+R (throw the set item) instead of B */
+    int triangleMove;    /* Triangle = L+A (use the set move) instead of fast forward */
+    int rightStickDiag;  /* right stick = R + direction (diagonal moves) */
+    /* cheats that only ease the mechanics */
+    int expMultiplier;   /* 1..4: experience gained in dungeons */
+    int noHunger;        /* the belly does not go down */
 };
 
 extern struct PortConfig gPortConfig;

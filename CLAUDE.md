@@ -93,7 +93,12 @@ Schalter: `PMD_SHOT=f1,f2` / `PMD_SHOT_EVERY=n` (PPM), `PMD_VIEW=0/1/2`, `PMD_WA
   PPMs** (`cmp`); (2) Renderer-Änderungen Bild für Bild gegen die alte Version vergleichen;
   (3) Vita-Build ohne Fehler.
 
-## Stand (0.1.0, 04.11.2026)
+## Stand (0.1.1, 04.11.2026)
+- 0.1.1: Weitsicht/Breitbild als **konstantes Bild in allen Szenen** (Szenen ohne Karte:
+  GBA-Bild mittig, Ränder schwarz; `sContentW/H` = Kartenanteil), Cheats nur noch
+  mechanik-schonend (Erfahrung ×1–4 in `AddExpPoints`, kein Hunger in
+  `dungeon_turn_effects.c`), Vita-Tasten: Viereck = L+R, Dreieck = L+A, rechter Stick =
+  R+Richtung, Fronttouch halten = Schnellvorlauf (alles im Menü umstellbar).
 - Host-, armhost- und Vita-Build laufen; auf der Pseudo-ROM bootet das Spiel durch Logos,
   Titel und Intro bis in die Basis (Weitsicht 400×240 in der Basis geprüft, ARM = x86).
 - Weitsicht: Szenen-Hooks (`Port_ViewSceneFrame`) in Dungeon-/Ground-/Weltkarten-/
@@ -114,4 +119,5 @@ Schalter: `PMD_SHOT=f1,f2` / `PMD_SHOT_EVERY=n` (PPM), `PMD_VIEW=0/1/2`, `PMD_WA
 3. Dungeon: `ShouldDisplayEntity` (±32 px) gilt auch für Logik – Monster/Items in den Rändern
    jenseits davon werden nicht gezeichnet; evtl. reine Render-Kopie einführen.
 4. Leistung messen (Vita: 400×240 Software-PPU mit 3 Threads; Old-3DS-Profil aktiv).
-5. Cheats erweitern (Items, Level), Overlay/Karte wie beim TMC-Port.
+5. Weitere sanfte Cheats (z. B. IQ-Multiplikator, Geld ×2) nur nach Rücksprache; Overlay/Karte
+   wie beim TMC-Port.

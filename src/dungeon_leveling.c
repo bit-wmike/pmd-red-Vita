@@ -1,4 +1,7 @@
 #include "global.h"
+#ifdef PORT
+#include "port/port_game.h"
+#endif
 #include "globaldata.h"
 #include "dungeon_leveling.h"
 #include "constants/tactic.h"
@@ -52,6 +55,9 @@ void AddExpPoints(Entity *pokemon, Entity *target, s32 exp)
   s32 expDiff;
 
   EntityInfo *info = GetEntInfo(target);
+#ifdef PORT
+  exp *= Port_ExpMultiplier();
+#endif
   if (info->level != 100) {
     if (!IsExperienceLocked(info->joinedAt.id)) {
       newExp = info->exp + exp;

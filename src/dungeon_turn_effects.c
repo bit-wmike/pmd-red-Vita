@@ -1,4 +1,7 @@
 #include "global.h"
+#ifdef PORT
+#include "port/port_game.h"
+#endif
 #include "globaldata.h"
 #include "dungeon_turn_effects.h"
 #include "dungeon_util.h"
@@ -110,6 +113,9 @@ void DoEndOfTurnEffects_Async(Entity *entity)
         entityInfo->usedLinkedMovesCounter = 0;
 
         bellyBefore = entityInfo->belly;
+#ifdef PORT
+        if (!Port_NoHunger())
+#endif
         entityInfo->belly = FixedPoint_Subtract(bellyBefore, FixedPoint_SetFromS48_16(&modifiedBellyDecrementValue));
         sound = TRUE;
         if (FixedPointToInt(bellyBefore) > 19 && FixedPointToInt(entityInfo->belly) <= 19)

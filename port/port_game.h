@@ -14,5 +14,7 @@ void Port_RequestQuickLoad(void);
 void Port_ShowMessage(const char *text);
 const char *Port_CurrentMessage(void);
 int Port_TurboActive(void);
+int Port_ExpMultiplier(void);
+int Port_NoHunger(void);
 
 #endif
