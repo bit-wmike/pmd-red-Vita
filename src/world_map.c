@@ -62,6 +62,14 @@ static void AnimateSprites(bool8 a0);
 static bool8 FadeScreen(void);
 static void nullsub_24(void);
 static void WorldMap_RunFrameActions(void);
+#ifdef PORT
+/* Port: the full map picture for the Full View (port/port_view.c). */
+struct WorldMap *Port_WorldMap(void)
+{
+    return sWorldMapPtr;
+}
+#endif
+
 static void UpdateMonSpritePosition(void);
 static void UpdateBg(void);
 static void sub_8010494(struct WorldMapInfo *r9);
@@ -415,7 +423,7 @@ static void WorldMap_RunFrameActions(void)
     ToggleWindowBgBuffer();
     IncrementPlayTime(gPlayTimeRef);
 #ifdef PORT
-    Port_ViewSceneFrame(PORT_SCENE_NONE);
+    Port_ViewSceneFrame(PORT_SCENE_WORLDMAP);
 #endif
     WaitForNextFrameAndAdvanceRNG();
     LoadBufferedInputs();

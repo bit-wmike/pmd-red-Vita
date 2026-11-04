@@ -96,9 +96,9 @@ Schalter: `PMD_SHOT=f1,f2` / `PMD_SHOT_EVERY=n` (PPM), `PMD_VIEW=0/1/2`, `PMD_WA
 ## Stand (0.1.0, 04.11.2026)
 - Host-, armhost- und Vita-Build laufen; auf der Pseudo-ROM bootet das Spiel durch Logos,
   Titel und Intro bis in die Basis (Weitsicht 400×240 in der Basis geprüft, ARM = x86).
-- Weitsicht: Szenen-Hooks (`Port_ViewSceneFrame`) in Dungeon-/Ground-Frame; Kartenebenen
-  (BG3, BG2 bei Zweischicht-Karten) werden vom Port aus `gDungeon`-Cels bzw.
-  `chunkMappings`/`tileMappings` gefüllt; BG0/BG1 (Text/HUD/Dunkelheit) am GBA-Rechteck,
+- Weitsicht: Szenen-Hooks (`Port_ViewSceneFrame`) in Dungeon-/Ground-/Weltkarten-/
+  Freundesareal-Frame; Kartenebenen (BG3, BG2 bei Zweischicht-Karten) werden vom Port aus
+  `gDungeon`-Cels, `chunkMappings`/`tileMappings` bzw. den 64×64-Bildern im RAM gefüllt; BG0/BG1 (Text/HUD/Dunkelheit) am GBA-Rechteck,
   außerhalb leer bzw. Dunkel-Kachel 0x27A; Sprites über `Port_SpriteStaged`/`Port_OamSlot`
   mit erweitertem Culling (`gPortViewMargin*`); WIN/HDMA um (dx,dy) verschoben.
 - Audio: m4a-Engine übersetzt, PCM-Block pro Bild, PSG emuliert (Musik hörbar im Host-Lauf).
@@ -109,7 +109,8 @@ Schalter: `PMD_SHOT=f1,f2` / `PMD_SHOT_EVERY=n` (PPM), `PMD_VIEW=0/1/2`, `PMD_WA
 1. Test mit Mikes ROM auf der Vita: Startzeit (ROM-Scan), Leistung (`[perf]`), Weitsicht in
    echten Dungeons (Dunkelheit in den Rändern: oben/unten nutzen Zeile 0/159 der WIN1-Tabelle;
    Rasteranzeige/Effekte auf BG2 bleiben auf das GBA-Rechteck beschränkt).
-2. Weltkarte/Freundesareal-Karte (64×64-Tilemaps im RAM) in die Weitsicht nehmen.
+2. Weltkarte/Freundesareal-Karte sind in der Weitsicht (480×320-Bild), aber ungetestet
+   (der Pseudo-ROM-Lauf erreicht sie nicht); Menüfenster darauf prüfen.
 3. Dungeon: `ShouldDisplayEntity` (±32 px) gilt auch für Logik – Monster/Items in den Rändern
    jenseits davon werden nicht gezeichnet; evtl. reine Render-Kopie einführen.
 4. Leistung messen (Vita: 400×240 Software-PPU mit 3 Threads; Old-3DS-Profil aktiv).

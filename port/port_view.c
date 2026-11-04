@@ -42,6 +42,12 @@
 #include "structs/str_ground_bg.h"
 #include "code_809D148.h"
 #include "text_1.h"
+#include "world_map.h"
+#include "friend_areas_map.h"
+
+struct WorldMap *Port_WorldMap(void);
+#define PICTURE_W 480
+#define PICTURE_H 320
 
 int gPortViewMode = PORT_VIEW_FULL;
 int gPortViewMarginLeft, gPortViewMarginRight, gPortViewMarginTop, gPortViewMarginBottom;
@@ -205,6 +211,27 @@ void Port_ViewOnVBlank(void)
     sActive = (w != PORT_GBA_W || h != PORT_GBA_H) && sSceneLatched != PORT_SCENE_NONE;
     if (sActive && sSceneLatched == PORT_SCENE_DUNGEON && gDungeon == NULL)
         sActive = 0;
+    if (sActive && sSceneLatched == PORT_SCENE_WORLDMAP) {
+        struct WorldMap *m = Port_WorldMap();
+        if (m == NULL)
+            sActive = 0;
+        else {
+            camX = m->bgPos.x;
+            camY = m->bgPos.y;
+        }
+        mapW = PICTURE_W;
+        mapH = PICTURE_H;
+    }
+    if (sActive && sSceneLatched == PORT_SCENE_FRIENDMAP) {
+        if (gFriendAreasMapPtr == NULL)
+            sActive = 0;
+        else {
+            camX = gFriendAreasMapPtr->bgPos.x;
+            camY = gFriendAreasMapPtr->bgPos.y;
+        }
+        mapW = PICTURE_W;
+        mapH = PICTURE_H;
+    }
     if (sActive && sSceneLatched == PORT_SCENE_GROUND) {
         if (!GroundInfo(&camX, &camY, &mapW, &mapH, &wrap))
             sActive = 0;
@@ -228,7 +255,14 @@ void Port_ViewOnVBlank(void)
     }
     sWidth = w;
     sHeight = h;
-    if (sActive && sSceneLatched == PORT_SCENE_GROUND && !wrap) {
+    if (sActive && (sSceneLatched == PORT_SCENE_WORLDMAP || sSceneLatched == PORT_SCENE_FRIENDMAP)) {
+        w = ClampToRoom(w, mapW, PORT_GBA_W);
+        h = ClampToRoom(h, mapH, PORT_GBA_H);
+        sWidth = w;
+        sHeight = h;
+        sDx = WindowOffset(camX, PORT_GBA_W, w, mapW);
+        sDy = WindowOffset(camY, PORT_GBA_H, h, mapH);
+    } else if (sActive && sSceneLatched == PORT_SCENE_GROUND && !wrap) {
         sDx = WindowOffset(camX, PORT_GBA_W, w, mapW);
         sDy = WindowOffset(camY, PORT_GBA_H, h, mapH);
     } else if (sActive) {
@@ -354,6 +388,22 @@ static void FillGround(int bg, const MapRender *mr, int layer, int x0, int y0, i
     }
 }
 
+/* A 64x64-tile picture kept in RAM (world map, friend areas map). */
+static void FillPicture(int bg, const u16 (*map)[64], int x0, int y0, int cols)
+{
+    int tx0 = x0 >> 3, ty0 = y0 >> 3;
+    uint16_t *shadow = sShadow[bg];
+    int r, c;
+    for (r = 0; r < 32; r++) {
+        int ty = ty0 + r;
+        uint16_t *row = shadow + (ty & 31) * SHADOW_COLS;
+        for (c = 0; c < cols; c++) {
+            int tx = tx0 + c;
+            row[c] = (tx >= 0 && ty >= 0 && tx < PICTURE_W / 8 && ty < PICTURE_H / 8) ? map[ty][tx] : BLANK_ENTRY;
+        }
+    }
+}
+
 /* UI layer (BG0 / BG1): the VRAM tilemap inside the GBA screen rectangle,
  * `outside` beyond it. */
 static void FillUi(int bg, uint16_t outside, int cols)
@@ -467,6 +517,27 @@ void Port_ViewBeforeRender(int *width, int *height)
         ShadowSet(2, 1);
         virtuappu_mode1_bg_dx[2] = (-sDx) & 0x1FF;
         virtuappu_mode1_bg_dy[2] = (-sDy) & 0x1FF;
+    } else if (sSceneLatched == PORT_SCENE_WORLDMAP || sSceneLatched == PORT_SCENE_FRIENDMAP) {
+        const u16 (*bg2)[64], (*bg3)[64];
+        int x0, y0;
+        if (sSceneLatched == PORT_SCENE_WORLDMAP) {
+            struct WorldMap *m = Port_WorldMap();
+            bg2 = m->unk3114;
+            bg3 = m->unk1114;
+            x0 = m->bgPos.x - sDx;
+            y0 = m->bgPos.y - sDy;
+        } else {
+            bg2 = gFriendAreasMapPtr->unk2014;
+            bg3 = gFriendAreasMapPtr->unk14;
+            x0 = gFriendAreasMapPtr->bgPos.x - sDx;
+            y0 = gFriendAreasMapPtr->bgPos.y - sDy;
+        }
+        FillPicture(2, bg2, x0, y0, cols);
+        FillPicture(3, bg3, x0, y0, cols);
+        ShadowSet(2, 1);
+        ShadowSet(3, 1);
+        WorldScroll(2, x0, y0);
+        WorldScroll(3, x0, y0);
     } else {
         GroundBg *g = gGroundMapDungeon_3001B70;
         int ctx, k, bg2Done = 0;

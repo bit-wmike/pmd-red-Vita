@@ -18,7 +18,9 @@ enum {
 enum {
     PORT_SCENE_NONE = 0, /* title, menus, map screens: the GBA picture */
     PORT_SCENE_DUNGEON = 1,
-    PORT_SCENE_GROUND = 2
+    PORT_SCENE_GROUND = 2,
+    PORT_SCENE_WORLDMAP = 3,  /* 480x320 picture in RAM */
+    PORT_SCENE_FRIENDMAP = 4  /* friend areas map, same layout */
 };
 
 extern int gPortViewMode;

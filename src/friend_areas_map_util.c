@@ -382,7 +382,7 @@ void FriendAreasMap_RunFrameActions(void)
     ToggleWindowBgBuffer();
     IncrementPlayTime(gPlayTimeRef);
 #ifdef PORT
-    Port_ViewSceneFrame(PORT_SCENE_NONE);
+    Port_ViewSceneFrame(PORT_SCENE_FRIENDMAP);
 #endif
     WaitForNextFrameAndAdvanceRNG();
     LoadBufferedInputs();
