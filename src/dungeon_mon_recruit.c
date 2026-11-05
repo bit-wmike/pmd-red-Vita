@@ -1,4 +1,7 @@
 #include "global.h"
+#ifdef PORT
+#include "port/port_cheats.h"
+#endif
 #include "globaldata.h"
 #include "dungeon_mon_recruit.h"
 #include "constants/dungeon_exit.h"
@@ -108,6 +111,9 @@ bool8 TryRecruitMonster(Entity *attacker, Entity *target)
         recruitRate += gFriendBowRecruitRateUpValue;
 
     recruitRate += gRecruitRateByLevel[attackerInfo->level];
+#ifdef PORT
+    recruitRate = Port_CheatRecruitRate(recruitRate, rand);
+#endif
     if (rand >= recruitRate)
         return FALSE;
 

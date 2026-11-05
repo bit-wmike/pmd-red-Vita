@@ -1,4 +1,7 @@
 #include "global.h"
+#ifdef PORT
+#include "port/port_cheats.h"
+#endif
 #include "globaldata.h"
 #include "dungeon_item_action.h"
 #include "dungeon_8041AD0.h"
@@ -629,6 +632,9 @@ static void HandleGummiItemAction(Entity *pokemon, Entity *target, u8 gummiIndex
   targetInfo = GetEntInfo(target);
   gummiBoost = gTypeGummiIQBoost[targetInfo->types[0]][gummiIndex];
   gummiBoost += gTypeGummiIQBoost[targetInfo->types[1]][gummiIndex];
+#ifdef PORT
+  gummiBoost = Port_CheatIq(gummiBoost);
+#endif
   sub_8078B5C(pokemon,target,
              gUnknown_810A808[targetInfo->types[0]][gummiIndex] +
              gUnknown_810A808[targetInfo->types[1]][gummiIndex],0,1);

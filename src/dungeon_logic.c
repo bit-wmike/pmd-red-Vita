@@ -1,4 +1,7 @@
 #include "global.h"
+#ifdef PORT
+#include "port/port_cheats.h"
+#endif
 #include "globaldata.h"
 #include "dungeon_logic.h"
 #include "structs/map.h"
@@ -355,6 +358,10 @@ s32 CalcSpeedStage(Entity *pokemon)
      gDungeon->unk644.stoleFromKecleon) {
     speed++;
   }
+#ifdef PORT
+  if (!entityInfo->isNotTeamMember)
+    speed += Port_CheatSpeedStage(gDungeon->unk644.fractionalTurn);
+#endif
   if (speed < 0) {
     speed = 0;
   }

@@ -1,4 +1,7 @@
 #include "global.h"
+#ifdef PORT
+#include "port/port_cheats.h"
+#endif
 #include "globaldata.h"
 #include "dungeon_damage.h"
 #include "constants/ability.h"
@@ -1174,6 +1177,10 @@ void CalcDamage(Entity *attacker, Entity *target, u8 moveType, s32 movePower, s3
         statCalc = s24_8_mul(IntToF248(attackerInfo->atk[splitIndex] + movePower), gAtkStatStageMultipliers[atkStatStage]);
         statCalc = s24_8_mul(statCalc, attackerInfo->offensiveMultipliers[splitIndex]);
         atkStat = F248ToInt(statCalc);
+#ifdef PORT
+        if (!attackerInfo->isNotTeamMember)
+            atkStat = Port_CheatStat(splitIndex ? PORT_STAT_SPATK : PORT_STAT_ATK, atkStat);
+#endif
 
         defStatStage = targetInfo->defensiveStages[splitIndex];
         if (splitIndex == 0 && targetInfo->bideClassStatus.status == STATUS_SKULL_BASH) {
@@ -1198,6 +1205,10 @@ void CalcDamage(Entity *attacker, Entity *target, u8 moveType, s32 movePower, s3
         statCalc = s24_8_mul(IntToF248(targetInfo->def[splitIndex]), gDefStatStageMultipliers[defStatStage]);
         statCalc = s24_8_mul(statCalc, targetInfo->defensiveMultipliers[splitIndex]);
         defStat = F248ToInt(statCalc);
+#ifdef PORT
+        if (!targetInfo->isNotTeamMember)
+            defStat = Port_CheatStat(splitIndex ? PORT_STAT_SPDEF : PORT_STAT_DEF, defStat);
+#endif
 
         rand = DungeonRandInt(100);
         if (splitIndex == 0) {

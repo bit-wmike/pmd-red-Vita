@@ -1,4 +1,7 @@
 #include "global.h"
+#ifdef PORT
+#include "port/port_cheats.h"
+#endif
 #include "globaldata.h"
 #include "constants/dungeon.h"
 #include "constants/trap.h"
@@ -223,6 +226,10 @@ void DrawMinimapTile(s32 x, s32 y)
 
         if (GetFloorType() == FLOOR_TYPE_NORMAL) {
             var_24 = gDungeon->unk181e8.unk18211;
+#ifdef PORT
+            if (Port_StairsMarker())
+                var_24 = TRUE;
+#endif
         }
         else {
             var_24 = FALSE;
@@ -300,6 +307,9 @@ void DrawMinimapTile(s32 x, s32 y)
             else {
                 if (!tileKnown) {
                     if (var_24 && (tile->terrainFlags & TERRAIN_TYPE_STAIRS)) {
+#ifdef PORT
+                        Port_CheatStairsDrawn(x, y, gDungeon->unk181e8.unk18211);
+#endif
                         if (GetFloorType() == FLOOR_TYPE_NORMAL) {
                             mapGfxType = MAP_GFX_STAIRS;
                         }

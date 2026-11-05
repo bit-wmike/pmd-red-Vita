@@ -1,6 +1,7 @@
 #include "global.h"
 #ifdef PORT
 #include "port/port_view.h"
+#include "port/port_cheats.h"
 #endif
 #include "globaldata.h"
 #include "dungeon_items.h"
@@ -179,7 +180,11 @@ void TryLeaderItemPickUp_Async(struct DungeonPos *pos, bool8 printMsg)
     }
     else if (GetItemCategory(tileItem->id) == CATEGORY_POKE) {
         PlaySoundEffect(0x14c);
+#ifdef PORT
+        AddToTeamMoney(Port_CheatMoney(GetMoneyValue(tileItem)));
+#else
         AddToTeamMoney(GetMoneyValue(tileItem));
+#endif
         sub_8045BF8(gFormatBuffer_Items[0],tileItem);
         RemoveGroundItem(pos,TRUE);
         LogMessageByIdWithPopupCheckUser_Async(leader,gPickedUpItem);

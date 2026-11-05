@@ -1,4 +1,7 @@
 #include "global.h"
+#ifdef PORT
+#include "port/port_cheats.h"
+#endif
 #include "globaldata.h"
 #include "constants/direction.h"
 #include "constants/dungeon_action.h"
@@ -464,7 +467,11 @@ void MonTryPickUpItem(Entity *entity)
         else {
             PlaySoundEffect(0x14C);
         }
+#ifdef PORT
+        AddToTeamMoney(Port_CheatMoney(GetMoneyValue(groundItem)));
+#else
         AddToTeamMoney(GetMoneyValue(groundItem));
+#endif
         sub_8045BF8(gFormatBuffer_Items[0], groundItem);
         RemoveGroundItem(&entity->pos, 1);
         DisplayDungeonLoggableMessageTrue_Async(entity, gMonPickedUpItem);

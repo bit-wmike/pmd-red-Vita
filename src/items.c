@@ -1,4 +1,7 @@
 #include "global.h"
+#ifdef PORT
+#include "port/port_cheats.h"
+#endif
 #include "globaldata.h"
 #include "status_strings.h"
 #include "constants/colors.h"
@@ -871,6 +874,10 @@ void GetGummiItemStatBoost(Pokemon* pokemon, u8 id, bool8 checkBoostFlags, Gummi
     value1 = gTypeGummiIQBoost[pokemon_type_1][gummi_index];
     diff  = pokemon->IQ;
 
+#ifdef PORT
+    value0 = Port_CheatIq(value0 + value1);
+    value1 = 0;
+#endif
     pokemon->IQ += value0 + value1;
     diff = pokemon->IQ - diff;
     if (pokemon->IQ <= 0) {

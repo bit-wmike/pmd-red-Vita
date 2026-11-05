@@ -1,4 +1,7 @@
 #include "global.h"
+#ifdef PORT
+#include "port/port_cheats.h"
+#endif
 #include "globaldata.h"
 #include "code_801B60C.h"
 #include "friend_area.h"
@@ -209,7 +212,11 @@ static void MR_InitStateDialogue(void)
         }
         case MR_STATE_MONEY_REWARD: {
             PlaySound(203);
+#ifdef PORT
+            AddToTeamMoney(Port_CheatMoney(sMRWork->rewards->moneyReward));
+#else
             AddToTeamMoney(sMRWork->rewards->moneyReward);
+#endif
 
             if (GetUnitSum_808D544(0) < 2)
                 CreateDialogueBoxAndPortrait(gUnknown_80E045C, 0, 0, 0x101);
@@ -239,7 +246,11 @@ static void MR_InitStateDialogue(void)
         case MR_STATE_UNLOCK_FRIEND_AREA: {
             if (GetFriendAreaStatus(sMRWork->rewards->friendAreaReward)) {
                 // We already have the friend area
+#ifdef PORT
+                AddToTeamMoney(Port_CheatMoney(1000));
+#else
                 AddToTeamMoney(1000);
+#endif
                 CreateDialogueBoxAndPortrait(gUnknown_80E04F4, 0, 0, 0x101);
             }
             else
