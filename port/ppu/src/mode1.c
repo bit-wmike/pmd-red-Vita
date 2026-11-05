@@ -36,6 +36,7 @@ int virtuappu_mode1_obj_port;
 int16_t virtuappu_mode1_obj_dx[128];
 int16_t virtuappu_mode1_obj_dy[128];
 int16_t virtuappu_mode1_obj_base_x[128];
+uint8_t virtuappu_mode1_obj_staged[128];
 int16_t virtuappu_mode1_obj_base_y[128];
 int virtuappu_mode1_line_dy;
 
@@ -1688,7 +1689,13 @@ void virtuappu_mode1_render_obj_line(int line, bool obj_1d, uint32_t* line_buffe
         }
 
         obj_y = mode1_oam_y(attr);
-        if (virtuappu_mode1_obj_port) {
+        if (virtuappu_mode1_obj_port && !virtuappu_mode1_obj_staged[i]) {
+            /* not placed by the port: GBA rules, shifted with the screen */
+            if (obj_y >= 160 && obj_y + bounds_height <= 256) {
+                continue;
+            }
+            obj_y = (obj_y >= 160 ? obj_y - 256 : obj_y) + virtuappu_mode1_obj_dy[i];
+        } else if (virtuappu_mode1_obj_port) {
             const int base_y = virtuappu_mode1_obj_base_y[i];
             obj_y = base_y + (((obj_y - base_y + 128) & 255) - 128) + virtuappu_mode1_obj_dy[i];
         } else if (virtuappu_mode1_obj_y_negative[i] || obj_y >= mode1_obj_y_wrap_threshold()) {
@@ -1703,7 +1710,9 @@ void virtuappu_mode1_render_obj_line(int line, bool obj_1d, uint32_t* line_buffe
         if (viewport_width > MODE1_GBA_VIEWPORT_X) {
             viewport_width = MODE1_GBA_VIEWPORT_X;
         }
-        if (virtuappu_mode1_obj_port) {
+        if (virtuappu_mode1_obj_port && !virtuappu_mode1_obj_staged[i]) {
+            obj_x = (obj_x >= 256 ? obj_x - 512 : obj_x) + virtuappu_mode1_obj_dx[i];
+        } else if (virtuappu_mode1_obj_port) {
             const int base_x = virtuappu_mode1_obj_base_x[i];
             obj_x = base_x + (((obj_x - base_x + 256) & 511) - 256) + virtuappu_mode1_obj_dx[i];
         } else if (obj_x >= obj_frame_width) {

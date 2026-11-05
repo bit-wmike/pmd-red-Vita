@@ -50,6 +50,7 @@
 #include "friend_areas_map.h"
 
 struct WorldMap *Port_WorldMap(void);
+extern GroundBg *gUnknown_3001B78; /* ground_weather.c: the weather's ground map */
 #define PICTURE_W 480
 #define PICTURE_H 320
 
@@ -102,6 +103,8 @@ void Port_SpriteStaged(int index, int x, int y)
     sStagedY[index] = (short)y;
 }
 
+static uint32_t sSlotFrame[128]; /* the frame a slot was last staged in */
+
 void Port_OamSlot(int slot, int index)
 {
     if (slot < 0 || slot >= 128)
@@ -113,6 +116,7 @@ void Port_OamSlot(int slot, int index)
     }
     sSlotX[slot] = sStagedX[index];
     sSlotY[slot] = sStagedY[index];
+    sSlotFrame[slot] = Port_FrameCounter() + 1;
 }
 
 int Port_ViewWidth(void)
@@ -664,8 +668,29 @@ void Port_ViewBeforeRender(int *width, int *height)
                     bg2Done = 1;
             }
         }
+        /* the weather (cloud shadows) is a second ground map with its own
+         * camera, drawn by the game for the GBA screen only */
+        if (!bg2Done && gUnknown_3001B78 != NULL) {
+            GroundBg *wg = gUnknown_3001B78;
+            for (ctx = 0; ctx < wg->unk474; ctx++) {
+                const MapRender *mr = &wg->mapRender[ctx];
+                for (k = 0; k < mr->numBgs; k++) {
+                    int layer = mr->unk2 + k;
+                    int bg = 2 + wg->unk52C.unkA + layer;
+                    int x0, y0;
+                    if (bg != 2)
+                        continue;
+                    x0 = mr->cameraPos.x - sDx;
+                    y0 = mr->cameraPos.y - sDy;
+                    FillGround(bg, mr, k, x0, y0, cols);
+                    ShadowSet(bg, 1);
+                    WorldScroll(bg, x0, y0);
+                    bg2Done = 1;
+                }
+            }
+        }
         if (!bg2Done) {
-            /* weather layer etc.: the VRAM tilemap, moved with the world */
+            /* other BG2 use: the VRAM tilemap, moved with the world */
             virtuappu_mode1_bg_dx[2] = (-sDx) & 0x1FF;
             virtuappu_mode1_bg_dy[2] = (-sDy) & 0x1FF;
         }
@@ -680,6 +705,9 @@ void Port_ViewBeforeRender(int *width, int *height)
         virtuappu_mode1_obj_dy[i] = (int16_t)sDy;
         virtuappu_mode1_obj_base_x[i] = sSlotX[i];
         virtuappu_mode1_obj_base_y[i] = sSlotY[i];
+        /* a slot the game's sprite system did not fill this frame (or the
+         * one before) keeps GBA rules: parked below line 160 = hidden */
+        virtuappu_mode1_obj_staged[i] = sSlotFrame[i] + 2 > Port_FrameCounter() + 1 && sSlotFrame[i] != 0;
     }
     DumpState();
     *width = sWidth;

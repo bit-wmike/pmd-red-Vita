@@ -95,7 +95,19 @@ Schalter: `PMD_SHOT=f1,f2` / `PMD_SHOT_EVERY=n` (PPM), `PMD_VIEW=0/1/2`, `PMD_WA
   PPMs** (`cmp`); (2) Renderer-Änderungen Bild für Bild gegen die alte Version vergleichen;
   (3) Vita-Build ohne Fehler.
 
-## Stand (0.1.10, 05.11.2026)
+## Stand (0.1.11, 05.11.2026)
+- 0.1.11 (Mikes `run3`-Screenshots): (1) **Sprite-Fragment** (Glumandas Schwanzflamme links unten):
+  das Spiel parkt unbenutzte OAM-Einträge unter Zeile 160; der Renderer rechnete sie wie
+  Port-platzierte Sprites um (Basis aus altem Slot) → sichtbar im Rand. Jetzt merkt
+  `Port_OamSlot` das Bild der Platzierung (`sSlotFrame`), `virtuappu_mode1_obj_staged[]` sagt dem
+  Renderer, welche Slots der Port gesetzt hat; alle anderen folgen GBA-Regeln (y ≥ 160 und
+  nicht umgebrochen = unsichtbar; sonst 8/9-Bit-Koordinaten + dx/dy). (2) **Wolken halbiert**: die
+  Wetterebene ist eine zweite `GroundBg` (`gUnknown_3001B78`, ground_weather.c) mit eigener
+  Kamera, die das Spiel nur für den GBA-Ausschnitt in BG2 zeichnet; `port_view.c` füllt sie jetzt
+  wie die Hauptkarte aus ihren Chunk-/Kachel-Tabellen über das ganze Bild (`bg2Done`).
+  (3) VPKs liegen zusätzlich im Daten-Repo unter `builds/`; `./vita.sh install` holt die neueste
+  per `git pull` und lädt sie auf die Vita (Mike arbeitet vom iPhone per SSH auf dem Pi).
+  Header `port/ppu/include/cpu/mode1.h` geändert → alle Build-Verzeichnisse frisch gebaut.
 - 0.1.10 (Mikes `run3`: Absturz beim ersten Brief, Gesundheitswarnung „springt“, englische
   Dungeon-Menübefehle, Sprite-Fragment, Wolken am Briefkasten):
   (1) **Absturz** in `ReadAnimatedColorData` (NULL-Zeiger): `gUnknown_839B7D4` (titlemenu_sbin)

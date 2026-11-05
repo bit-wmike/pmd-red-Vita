@@ -7,6 +7,7 @@
 #                            (ux0:picture/SCREENSHOT/**) from the Vita into runs/<name>/,
 #                            delete the screenshots and dumps on the Vita, commit, push
 #   ./vita.sh vpk <file>     upload a VPK to ux0:data/pmd/ (install it with VitaShell)
+#   ./vita.sh install        git pull, then upload the newest builds/*.vpk of the data repo
 #   ./vita.sh log            show the tail of the Vita's log.txt without fetching
 #   ./vita.sh set key=value  change one key of settings.ini on the Vita (e.g. text_debug=1)
 #
@@ -58,6 +59,15 @@ vpk)
     ;;
 log)
     ftp "cat $DATA/log.txt" | tail -40
+    ;;
+install)
+    # ./vita.sh install   -> newest VPK from builds/ (git pull first) onto the Vita
+    cd "$here" && git pull -q --rebase origin main || true
+    vpk="$(ls -1 "$here"/builds/*.vpk 2>/dev/null | sort -V | tail -1)"
+    [ -n "$vpk" ] || { echo "keine VPK in builds/"; exit 1; }
+    echo "== $vpk"
+    ftp "put -O $DATA '$vpk'"
+    echo "== liegt in $DATA/ - in VitaShell oeffnen und installieren"
     ;;
 set)
     # ./vita.sh set text_debug=1   -> changes one key of settings.ini on the Vita

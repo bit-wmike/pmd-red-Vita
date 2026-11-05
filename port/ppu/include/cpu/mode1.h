@@ -41,6 +41,9 @@ extern int16_t virtuappu_mode1_obj_dy[128];
  * 9/8-bit, so the full coordinate is the one nearest to this base. */
 extern int16_t virtuappu_mode1_obj_base_x[128];
 extern int16_t virtuappu_mode1_obj_base_y[128];
+/* 1 when the port staged the slot this frame; 0 = plain GBA placement (an
+ * entry parked below line 160 stays hidden, as on the GBA). */
+extern uint8_t virtuappu_mode1_obj_staged[128];
 /* Source GBA scanline = output line - line_dy (wide view shifted down). */
 extern int virtuappu_mode1_line_dy;
 extern virtuappu_mode1_pre_line_fn virtuappu_mode1_pre_line_callback;
