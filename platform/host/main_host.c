@@ -46,7 +46,7 @@ static char sSavePath[1024];
 static int sQSaveAt = -1, sQLoadAt = -1;
 
 struct InputEvent { int frame; unsigned keys; };
-static struct InputEvent sInput[1024];
+static struct InputEvent sInput[8192];
 static int sInputCount;
 
 uint64_t Platform_TimeUs(void)

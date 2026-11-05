@@ -154,6 +154,7 @@ static void RenderFrame(void)
     sRendering = 1;
     Port_ProfileBegin(PORT_PROF_RENDER);
     virtuappu_mode1_render_frame(&ppu);
+    Port_ViewAfterRender();
     Port_ProfileEnd(PORT_PROF_RENDER);
     sRendering = 0;
     {
@@ -168,6 +169,22 @@ static void RenderFrame(void)
                 memset(sFrameBuffer + y * PORT_VIEW_MAX_W, 0, (size_t)width * 4);
             for (y = bottom; y < height; y++)
                 memset(sFrameBuffer + y * PORT_VIEW_MAX_W, 0, (size_t)width * 4);
+        }
+    }
+    {
+        /* columns beside a picture narrower than the frame (logos, world
+         * map flights): sprites leaving the picture end at its edge, as at
+         * the GBA screen's edge */
+        int left, right, y;
+        Port_ViewBlankCols(&left, &right);
+        if (right > left && (left > 0 || right < width)) {
+            for (y = 0; y < height; y++) {
+                uint32_t *row = sFrameBuffer + y * PORT_VIEW_MAX_W;
+                if (left > 0)
+                    memset(row, 0, (size_t)(left < width ? left : width) * 4);
+                if (right < width)
+                    memset(row + right, 0, (size_t)(width - right) * 4);
+            }
         }
     }
 

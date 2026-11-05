@@ -47,7 +47,11 @@ static const File *Port_ChooseFile(const File *file, s32 cursor)
     if (getenv("PMD_FILE_DEBUG"))
         Platform_Log("file: open %s: header state %d, content state %d\n", file->name, state, contentState);
 #endif
-    if (contentState != -1 && contentState != 2 && state != -1 && state != 2)
+    /* -1 not found, 2 taken over partly, 6 placed next to its neighbours
+     * (a guess for blocks the decomp keeps as baserom.gba bytes, such as the
+     * title menu pictures titlen0..2): the file of the same name in the
+     * ROM's own archive is the better source */
+    if (contentState != -1 && contentState != 2 && contentState != 6 && state != -1 && state != 2 && state != 6)
         return file; /* identical in the user's ROM, or compiled data of the port */
     rom = Port_RomFile(file->name);
     if (rom == NULL) {

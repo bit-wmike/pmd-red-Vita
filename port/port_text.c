@@ -500,13 +500,51 @@ static int ParallelAt(uint32_t start, uint32_t count, uint32_t idx, long d)
     return text * 2 >= count;
 }
 
-static const char *const sLangWords[PORT_LANG_COUNT][6] = {
-    {" the ", " you ", " and ", " is ", " to ", " with "},
-    {" der ", " die ", " das ", " und ", " nicht ", " ist "},
-    {" les ", " est ", " vous ", " pas ", " une ", " des "},
-    {" il ", " che ", " non ", " di ", " una ", " per "},
-    {" el ", " que ", " los ", " las ", " es ", " con "},
+/* Words that mark a language, compared as whole words (letters only,
+ * ASCII lower-cased; "~27" apostrophes, line breaks and punctuation split
+ * words: "J~27ai" gives "j"). Short partner lines need the pronouns ("Je",
+ * "Ich"). Words shared by two languages are left out ("es" DE/ES, "la",
+ * "le", "ma" FR/IT/ES). */
+static const char *const sLangWords[PORT_LANG_COUNT][16] = {
+    {"the", "you", "and", "is", "to", "with", "my", "of", "me", "are", "this", "it", "can", "ll", "ve", NULL},
+    {"der", "die", "das", "und", "nicht", "ist", "ich", "mein", "meine", "bin", "wir", "auf", "mit", "noch", "dich", "dein"},
+    {"les", "est", "vous", "pas", "une", "des", "je", "mon", "suis", "niveau", "et", "nous", "avec", "c", "j", NULL},
+    {"il", "che", "non", "di", "una", "per", "mio", "sono", "livello", "ho", "della", "anche", "questo", NULL, NULL, NULL},
+    {"el", "que", "los", "las", "con", "nivel", "soy", "estoy", "muy", "por", "del", "subido", NULL, NULL, NULL, NULL},
 };
+
+/* Adds the language words of the string at p to score[]. */
+static void ScoreWords(uint32_t p, unsigned *score)
+{
+    char word[16];
+    size_t n = 0;
+    int k, w;
+    for (;; p++) {
+        unsigned c = p < gHostRomSize ? gHostRom[p] : 0;
+        int letter = (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z');
+        if (c == '~' && p + 2 < gHostRomSize) { /* ~27 and the like: a separator */
+            letter = 0;
+            p += 2;
+        }
+        if (letter) {
+            if (n < sizeof(word) - 1)
+                word[n++] = (char)(c | 0x20);
+            else
+                n = sizeof(word); /* too long: no word of the lists */
+            continue;
+        }
+        if (n > 0 && n < sizeof(word)) {
+            word[n] = 0;
+            for (k = 0; k < PORT_LANG_COUNT; k++)
+                for (w = 0; w < 16 && sLangWords[k][w]; w++)
+                    if (strcmp(word, sLangWords[k][w]) == 0)
+                        score[k]++;
+        }
+        n = 0;
+        if (c == 0)
+            break;
+    }
+}
 
 /* Letters that mark a language (Latin-1); e is left out: Pokémon. */
 static const char *const sLangLetters[PORT_LANG_COUNT] = {
@@ -522,6 +560,7 @@ static int TableLanguage(uint32_t start, uint32_t n, uint32_t step)
     int k, w, best = -1;
     for (j = 0; j < n; j += step) {
         uint32_t p = Target(start + sStride * j);
+        ScoreWords(p, score);
         for (; gHostRom[p]; p++) {
             unsigned c = gHostRom[p];
             if (c >= 0xc0 && c != 0xe9) {
@@ -530,15 +569,6 @@ static int TableLanguage(uint32_t start, uint32_t n, uint32_t step)
                     if (strchr(sLangLetters[k], (int)c))
                         letters[k]++;
             }
-            if (c != ' ')
-                continue;
-            for (k = 0; k < PORT_LANG_COUNT; k++)
-                for (w = 0; w < 6; w++) {
-                    const char *word = sLangWords[k][w];
-                    size_t len = strlen(word);
-                    if (p + len < gHostRomSize && memcmp(gHostRom + p, word, len) == 0)
-                        score[k]++;
-                }
         }
     }
     for (k = 0; k < PORT_LANG_COUNT; k++)
@@ -701,7 +731,16 @@ static uint32_t PoolEntryNext(uint32_t p, int kind)
 }
 
 
-/* The language of the text between start and end by its common words. */
+/* The language of the text between start and end by its common words
+ * (index time: the pools of textindex.bin depend on it, keep it as is). */
+static const char *const sPoolWords[PORT_LANG_COUNT][6] = {
+    {" the ", " you ", " and ", " is ", " to ", " with "},
+    {" der ", " die ", " das ", " und ", " nicht ", " ist "},
+    {" les ", " est ", " vous ", " pas ", " une ", " des "},
+    {" il ", " che ", " non ", " di ", " una ", " per "},
+    {" el ", " que ", " los ", " las ", " es ", " con "},
+};
+
 static int DetectLanguage(uint32_t start, uint32_t end)
 {
     unsigned score[PORT_LANG_COUNT] = {0};
@@ -712,7 +751,7 @@ static int DetectLanguage(uint32_t start, uint32_t end)
             continue;
         for (k = 0; k < PORT_LANG_COUNT; k++)
             for (w = 0; w < 6; w++) {
-                const char *word = sLangWords[k][w];
+                const char *word = sPoolWords[k][w];
                 size_t len = strlen(word);
                 if (p + len <= end && memcmp(gHostRom + p, word, len) == 0)
                     score[k]++;
@@ -1034,6 +1073,7 @@ int Port_TextMultilingual(void)
 }
 
 static const unsigned char *PageOf(const unsigned char *s);
+static int AfterPageBreak(const unsigned char *s);
 
 /* A translation keeps the placeholders of its original ($m0, $i0, %s ...):
  * a candidate with other placeholders is a wrong match (a short label such
@@ -1117,7 +1157,7 @@ const unsigned char *Port_Text(const unsigned char *s)
         r = Get(sIndex, INDEX_BITS, Fnv32(s, n));
         if (r < 0 || strcmp((const char *)gHostRom + r, (const char *)s) != 0) {
             const unsigned char *t = PageOf(s);
-            if (sDebug && t == s && (s[-1] != 'P' || s[-2] != '#'))
+            if (sDebug && t == s && !AfterPageBreak(s))
                 Platform_Log("text: not in the ROM: [%.60s]\n", s);
             return t;
         }
@@ -1138,13 +1178,47 @@ const unsigned char *Port_Text(const unsigned char *s)
 /* A pointer into a string: the dialogue engine continues after a page
  * break ("#P") with a pointer into the original string. The whole string
  * is translated and the same page of the translation returned. */
+/* The lowest address a string around s may start at: the ROM or one of
+ * the game's RAM sections. Stack buffers and other memory give NULL (the
+ * byte before them must not be read: AddressSanitizer found such reads). */
+extern unsigned char __start_ewram_data[], __stop_ewram_data[];
+extern unsigned char __start_ewram_lib[], __stop_ewram_lib[];
+extern unsigned char __start_iwram_data[], __stop_iwram_data[];
+extern unsigned char __start_ewram_init[], __stop_ewram_init[];
+extern unsigned char __start_iwram_init[], __stop_iwram_init[];
+
+static const unsigned char *RegionStart(const unsigned char *s)
+{
+    if (s >= gHostRom && s < gHostRom + gHostRomSize)
+        return gHostRom;
+    if (s >= __start_ewram_data && s < __stop_ewram_data)
+        return __start_ewram_data;
+    if (s >= __start_ewram_lib && s < __stop_ewram_lib)
+        return __start_ewram_lib;
+    if (s >= __start_iwram_data && s < __stop_iwram_data)
+        return __start_iwram_data;
+    if (s >= __start_ewram_init && s < __stop_ewram_init)
+        return __start_ewram_init;
+    if (s >= __start_iwram_init && s < __stop_iwram_init)
+        return __start_iwram_init;
+    return NULL;
+}
+
+/* Is s right behind a page break ("#P") inside a known region? */
+static int AfterPageBreak(const unsigned char *s)
+{
+    const unsigned char *lo = RegionStart(s);
+    return lo != NULL && s - lo >= 2 && s[-1] == 'P' && s[-2] == '#';
+}
+
 static const unsigned char *PageOf(const unsigned char *s)
 {
-    const unsigned char *start = s, *t, *p;
+    const unsigned char *start = s, *t, *p, *lo;
     int pages = 0, k;
-    if (s[-1] != 'P' || s[-2] != '#')
+    if (!AfterPageBreak(s))
         return s;
-    while (s - start < MAX_STR && start[-1] != 0)
+    lo = RegionStart(s);
+    while (s - start < MAX_STR && start > lo && start[-1] != 0)
         start--;
     if (start == s || s - start >= MAX_STR)
         return s;

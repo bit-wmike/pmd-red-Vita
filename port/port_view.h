@@ -48,6 +48,10 @@ void Port_ViewOnVBlank(void);
 void Port_ViewBeforeRender(int *width, int *height);
 /* Rows of the frame that must stay black (no map there): [0,top) and [bottom,height). */
 void Port_ViewBlankRows(int *top, int *bottom);
+/* Columns beside a picture narrower than the frame are blanked: [left, right) stays. */
+void Port_ViewBlankCols(int *left, int *right);
+/* After the frame is drawn: undoes the port's temporary OAM copies. */
+void Port_ViewAfterRender(void);
 int Port_ViewWidth(void);
 int Port_ViewHeight(void);
 int Port_ViewZoomHeight(void);

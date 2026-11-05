@@ -203,6 +203,15 @@ static SceUInt64 sLastPresentEnd;
 static SceUInt64 sWorkSum, sWorkMax;
 static int sWorkFrames, sSlowFrames;
 
+static int FreeMemKiB(void)
+{
+    SceKernelFreeMemorySizeInfo info;
+    info.size = sizeof(info);
+    if (sceKernelGetFreeMemorySize(&info) < 0)
+        return -1;
+    return info.size_user / 1024;
+}
+
 static void PerfFrame(SceUInt64 start)
 {
     if (sLastPresentEnd) {
@@ -214,10 +223,10 @@ static void PerfFrame(SceUInt64 start)
             sSlowFrames++;
         if (++sWorkFrames == 300) {
             Platform_Log("[perf] frame work avg %.2f ms (render %.2f ms), max %.2f ms, >16 ms: %d of 300, "
-                         "view %dx%d, catchup %d, render threads %d\n",
+                         "view %dx%d, catchup %d, render threads %d, free mem %d KiB\n",
                          sWorkSum / 300.0 / 1000.0, Port_ProfileAverageUs(PORT_PROF_RENDER) / 1000.0,
                          sWorkMax / 1000.0, sSlowFrames, Port_ViewWidth(), Port_ViewHeight(), sCatchup,
-                         1 + virtuappu_mode1_worker_count());
+                         1 + virtuappu_mode1_worker_count(), FreeMemKiB());
             sCatchup = 0;
             sWorkSum = sWorkMax = 0;
             sWorkFrames = sSlowFrames = 0;
@@ -723,7 +732,7 @@ static void WriteCrumbs(void)
     static unsigned sCount;
     static char buf[2048];
     int n;
-    if (++sCount % 30)
+    if (++sCount % 10)
         return;
     n = snprintf(buf, sizeof(buf), "pmd %s crumbs (newest last)\n", PMD_PORT_VERSION);
     n += Port_CrumbText(buf + n, (int)sizeof(buf) - n);

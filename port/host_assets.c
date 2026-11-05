@@ -708,7 +708,10 @@ int Port_LoadRom(unsigned char *rom, size_t size)
             continue; /* judged by its parts */
         if (a->found == 5)
             gPortAssetsPartial++;
-        if (!a->found && a->fallback) {
+        /* a block of baserom.gba bytes only has a fallback of zeros: it
+         * stays "not found", so a file of that name comes from the ROM's
+         * own archive (the title menu palettes titlen0p..) */
+        if (!a->found && a->fallback && !HoleOnly(a)) {
             memcpy(a->dst, a->fallback, a->size);
             a->found = 4;
             gPortAssetsPartial++;

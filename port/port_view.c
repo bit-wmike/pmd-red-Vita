@@ -308,6 +308,10 @@ static int GroundInfo(int *camX, int *camY, int *mapW, int *mapH, int *wrap)
     if (UniformMap(&g->mapRender[0]))
         return 0;
     if (g->bpcFile != NULL && g->bpcFile->file != NULL && g->bpcFile->file->name != NULL) {
+        /* S03 (the world map the intro flies over) streams its tiles into
+         * the GBA window only: a GBA-sized picture */
+        if (strncmp((const char *)g->bpcFile->file->name, "S03", 3) == 0)
+            return 0;
         if (PictureMapName((const char *)g->bpcFile->file->name)) {
             sPictureMap = 1;
             sPictureClamp = strncmp((const char *)g->bpcFile->file->name, "S02", 3) == 0;
@@ -323,6 +327,120 @@ static int GroundInfo(int *camX, int *camY, int *mapW, int *mapH, int *wrap)
 
 void Port_ViewBeforeLogicEnd(void)
 {
+}
+
+/* The width of an OBJ from its shape and size (attr0 bits 14-15, attr1
+ * bits 14-15). */
+static int ObjWidth(unsigned a0, unsigned a1)
+{
+    static const unsigned char w[3][4] = {{8, 16, 32, 64}, {16, 32, 32, 64}, {8, 8, 16, 32}};
+    unsigned shape = (a0 >> 14) & 3, size = (a1 >> 14) & 3;
+    return shape < 3 ? w[shape][size] : 0;
+}
+
+/* OAM slot dst = slot src moved to GBA x (the renderer reads x from OAM,
+ * the base coordinate only resolves the 9-bit wrap). */
+static unsigned char sSavedObj[128][6]; /* OAM entries borrowed for copies, restored after drawing */
+static unsigned char sSavedSlot[128];
+static int sSavedCount;
+
+static void CopyObjAt(int dst, int src, int x)
+{
+    uint16_t a1;
+    if (sSavedCount < 128) {
+        memcpy(sSavedObj[sSavedCount], gHostOam + dst * 8, 6);
+        sSavedSlot[sSavedCount++] = (unsigned char)dst;
+    }
+    memcpy(gHostOam + dst * 8, gHostOam + src * 8, 6);
+    memcpy(&a1, gHostOam + dst * 8 + 2, 2);
+    a1 = (uint16_t)((a1 & ~0x1FFu) | ((unsigned)x & 0x1FFu));
+    memcpy(gHostOam + dst * 8 + 2, &a1, 2);
+}
+
+/* The title screen's sea is a row of equal sprites, spaced by their width,
+ * that covers the GBA screen and a bit more; in the Full View the row is
+ * continued to the frame's edges with copies in unused OAM slots. */
+static void ExtendSpriteRows(void)
+{
+    int i, j, free = 127;
+    for (i = 0; i < 128; i++) {
+        unsigned a0, a1, a2;
+        int w, x, left, right, n = 0, x0;
+        memcpy(&a0, gHostOam + i * 8, 2);
+        a0 &= 0xFFFF;
+        memcpy(&a1, gHostOam + i * 8 + 2, 2);
+        a1 &= 0xFFFF;
+        memcpy(&a2, gHostOam + i * 8 + 4, 2);
+        a2 &= 0xFFFF;
+        if ((a0 & 0x300) != 0 || (a0 & 0xFF) >= 160 || !virtuappu_mode1_obj_staged[i])
+            continue; /* hidden, affine or not placed this frame */
+        w = ObjWidth(a0, a1);
+        if (w < 16)
+            continue;
+        /* the row: same line, size and tiles, x = base + k * w */
+        left = right = x0 = sSlotX[i];
+        for (j = 0; j < 128; j++) {
+            unsigned b0 = 0, b1 = 0, b2 = 0;
+            memcpy(&b0, gHostOam + j * 8, 2);
+            memcpy(&b1, gHostOam + j * 8 + 2, 2);
+            memcpy(&b2, gHostOam + j * 8 + 4, 2);
+            if (!virtuappu_mode1_obj_staged[j] || b0 != a0 || (b1 & 0xFE00) != (a1 & 0xFE00) || b2 != a2 || sSlotY[j] != sSlotY[i])
+                continue;
+            x = sSlotX[j];
+            if ((x - x0) % w != 0)
+                continue;
+            n++;
+            if (x < left)
+                left = x;
+            if (x > right)
+                right = x;
+        }
+        if (n < 4 || sSlotX[i] != left)
+            continue; /* not a row, or not its first sprite: handled once */
+        /* copies to the left and right of the row, into free slots */
+        for (x = left - w; x + w > -sUiDx; x -= w) {
+            while (free >= 0 && (virtuappu_mode1_obj_staged[free] || ((gHostOam[free * 8] & 0xFF) < 160 && !(gHostOam[free * 8 + 1] & 2))))
+                free--;
+            if (free < 0)
+                return;
+            CopyObjAt(free, i, x);
+            sSlotX[free] = (short)x;
+            sSlotY[free] = sSlotY[i];
+            sSlotUi[free] = sSlotUi[i];
+            virtuappu_mode1_obj_staged[free] = 1;
+            virtuappu_mode1_obj_base_x[free] = (int16_t)x;
+            virtuappu_mode1_obj_base_y[free] = sSlotY[i];
+            virtuappu_mode1_obj_dx[free] = virtuappu_mode1_obj_dx[i];
+            virtuappu_mode1_obj_dy[free] = virtuappu_mode1_obj_dy[i];
+        }
+        for (x = right + w; x < sWidth - sUiDx; x += w) {
+            while (free >= 0 && (virtuappu_mode1_obj_staged[free] || ((gHostOam[free * 8] & 0xFF) < 160 && !(gHostOam[free * 8 + 1] & 2))))
+                free--;
+            if (free < 0)
+                return;
+            CopyObjAt(free, i, x);
+            sSlotX[free] = (short)x;
+            sSlotY[free] = sSlotY[i];
+            sSlotUi[free] = sSlotUi[i];
+            virtuappu_mode1_obj_staged[free] = 1;
+            virtuappu_mode1_obj_base_x[free] = (int16_t)x;
+            virtuappu_mode1_obj_base_y[free] = sSlotY[i];
+            virtuappu_mode1_obj_dx[free] = virtuappu_mode1_obj_dx[i];
+            virtuappu_mode1_obj_dy[free] = virtuappu_mode1_obj_dy[i];
+        }
+    }
+}
+
+/* After drawing: the borrowed OAM entries get their contents back (the
+ * game does not rewrite unused entries every frame) and lose the port's
+ * placement. */
+void Port_ViewAfterRender(void)
+{
+    while (sSavedCount > 0) {
+        int slot = sSavedSlot[--sSavedCount];
+        memcpy(gHostOam + slot * 8, sSavedObj[sSavedCount], 6);
+        virtuappu_mode1_obj_staged[slot] = 0;
+    }
 }
 
 /* Called after the game's VBlank handler: the registers and OAM it has just
@@ -610,7 +728,7 @@ static void DumpState(void)
         u16 a0 = *(u16 *)(gHostOam + i * 8), a1 = *(u16 *)(gHostOam + i * 8 + 2);
         if ((a0 & 0x300) == 0x200)
             continue;
-        Platform_Log("oam %3d y=%3d x=%3d base=%d,%d\n", i, a0 & 0xFF, a1 & 0x1FF, sSlotX[i], sSlotY[i]);
+        Platform_Log("oam %3d y=%3d x=%3d base=%d,%d a0=%04x a1=%04x staged=%d\n", i, a0 & 0xFF, a1 & 0x1FF, sSlotX[i], sSlotY[i], a0, a1, virtuappu_mode1_obj_staged[i]);
     }
 #endif
 }
@@ -619,6 +737,23 @@ static void DumpState(void)
 /* Scenes without a map (title, menus): the game's tilemaps hold rows
  * beyond the 160 GBA lines (scroll effects such as the title screen's
  * sea), which must not show above or below the GBA picture. */
+/* Columns outside the picture of a scene without a map, which is
+ * narrower than the frame: [left, right) keeps its pixels; left = 0 and
+ * right = width when nothing is to be blanked. */
+void Port_ViewBlankCols(int *left, int *right)
+{
+    *left = 0;
+    *right = sWidth;
+    if (!sActive || sContentW >= sWidth)
+        return;
+    if (sSceneLatched == PORT_SCENE_GROUND && !sPictureMap)
+        return; /* a map narrower than the frame: its edge is drawn as is */
+    if (sPictureClamp)
+        return; /* the title runs on into the margins */
+    *left = (sWidth - sContentW) / 2;
+    *right = *left + sContentW;
+}
+
 void Port_ViewBlankRows(int *top, int *bottom)
 {
 #ifndef __vita__
@@ -749,6 +884,12 @@ void Port_ViewBeforeRender(int *width, int *height)
                     continue;
                 x0 = mr->cameraPos.x - sDx;
                 y0 = mr->cameraPos.y - sDy;
+#ifndef __vita__
+                if (getenv("PMD_GROUND_DEBUG") && Port_FrameCounter() % 200 == 0)
+                    Platform_Log("ground: ctx %d k %d layer %d bg %d map %dx%d chunks %dx%d wrap %d cam %d,%d clamp %d hofs %d\n", ctx, k, layer, bg,
+                                 mr->mapSizePixels.x, mr->mapSizePixels.y, mr->widthChunks, mr->heightChunks, mr->wrapAround, mr->cameraPos.x,
+                                 mr->cameraPos.y, sPictureClamp, IO16(0x10 + bg * 4) & 0x1FF);
+#endif
                 FillGround(bg, mr, k, x0, y0, cols);
                 ShadowSet(bg, 1);
                 WorldScroll(bg, x0, y0);
@@ -797,6 +938,10 @@ void Port_ViewBeforeRender(int *width, int *height)
          * one before) keeps GBA rules: parked below line 160 = hidden */
         virtuappu_mode1_obj_staged[i] = sSlotFrame[i] + 2 > Port_FrameCounter() + 1 && sSlotFrame[i] != 0;
     }
+    /* the title's sea row continued to the frame's edges (copies into free
+     * OAM slots, undone by Port_ViewAfterRender) */
+    if (sPictureClamp)
+        ExtendSpriteRows();
     DumpState();
 #ifndef __vita__
     {

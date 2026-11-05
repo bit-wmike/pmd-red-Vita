@@ -1,6 +1,9 @@
 #include "global.h"
 #include "globaldata.h"
 #include "ground_script.h"
+#ifdef PORT
+#include "port/port_game.h"
+#endif
 #include "constants/dungeon.h"
 #include "constants/friend_area.h"
 #include "constants/item.h"
@@ -1519,6 +1522,9 @@ static s32 ExecuteScriptCommand(Action *action)
     while (TRUE) {
         scriptData->curPtr = scriptData->script.ptr;
         curCmd = *scriptData->script.ptr++;
+#ifdef PORT
+        Port_Crumb("op %02x %d %d", curCmd.op, (s16)curCmd.arg1, (s16)curCmd.argShort);
+#endif
         switch (scriptData->curScriptOp = curCmd.op) {
             case CMD_BYTE_01: {
                 u32 groundMap_ = (s16)curCmd.arg1;
