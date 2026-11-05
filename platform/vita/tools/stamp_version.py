@@ -22,4 +22,6 @@ y = h - size - size // 2
 for ox, oy in ((-2, 0), (2, 0), (0, -2), (0, 2), (-1, -1), (1, 1), (-1, 1), (1, -1)):
     d.text((x + ox, y + oy), text, font=font, fill=(0, 0, 0, 230))
 d.text((x, y), text, font=font, fill=(255, 240, 200, 255))
-im.save(dst)
+# the Vita's LiveArea shows only 8-bit palette PNGs (a 32-bit bg.png comes
+# out as a grey page): back to 256 colours
+im.convert("RGB").quantize(colors=256, method=Image.Quantize.MEDIANCUT, dither=Image.Dither.FLOYDSTEINBERG).save(dst, optimize=True)

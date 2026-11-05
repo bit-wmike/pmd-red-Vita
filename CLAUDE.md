@@ -95,7 +95,7 @@ Schalter: `PMD_SHOT=f1,f2` / `PMD_SHOT_EVERY=n` (PPM), `PMD_VIEW=0/1/2`, `PMD_WA
   PPMs** (`cmp`); (2) Renderer-Änderungen Bild für Bild gegen die alte Version vergleichen;
   (3) Vita-Build ohne Fehler.
 
-## Stand (0.1.12, 05.11.2026)
+## Stand (0.1.13, 05.11.2026)
 - 0.1.12 (Mikes `run4`, 0.1.11: Absturz vor dem ersten Dungeon, Titel/Gesundheitshinweis englisch bzw.
   „fehlerhaft“, Tastatur-Müll bei der Namensgebung, Traumtext nicht zentriert): (1) **Absturz**: `lvmp001`
   (Levelkurve, AT-gepackt, 616-Byte-Block mit SIRO-Kopf) wird aus der EU-ROM genommen; `Port_ChooseFile`
@@ -119,6 +119,9 @@ Schalter: `PMD_SHOT=f1,f2` / `PMD_SHOT_EVERY=n` (PPM), `PMD_VIEW=0/1/2`, `PMD_WA
   UI-Ebene (BG0 mit eigenem dx) – Rücksprache mit Mike. `UniformMap` (einfarbige Karten → Bild mittig) ist
   drin, greift hier aber nicht (Karte hat echte Kacheln).
   (6) `vita.sh fetch` holt jetzt auch `pmd_red.sav`.
+- 0.1.13: **LiveArea-Hintergrund grau** (Mikes Screenshot): `stamp_version.py` schrieb bg/startup als
+  32-Bit-RGBA-PNG; die Vita zeigt in der LiveArea nur 8-Bit-Paletten-PNGs (sonst graue Seite). Jetzt
+  Quantisierung auf 256 Farben beim Stempeln. Regel: alle sce_sys-PNGs müssen Modus `P` haben.
 - 0.1.11 (Mikes `run3`-Screenshots): (1) **Sprite-Fragment** (Glumandas Schwanzflamme links unten):
   das Spiel parkt unbenutzte OAM-Einträge unter Zeile 160; der Renderer rechnete sie wie
   Port-platzierte Sprites um (Basis aus altem Slot) → sichtbar im Rand. Jetzt merkt
