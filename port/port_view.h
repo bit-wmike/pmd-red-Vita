@@ -51,5 +51,10 @@ void Port_ViewBlankRows(int *top, int *bottom);
 int Port_ViewWidth(void);
 int Port_ViewHeight(void);
 int Port_ViewZoomHeight(void);
+/* The world's shift in the frame being rendered (where GBA-screen pixel
+ * (0,0) of the map and the world sprites lands) and the scene that frame
+ * shows (latched at VBlank; PORT_SCENE_NONE once a scene stops reporting). */
+void Port_ViewWorldShift(int *dx, int *dy);
+int Port_ViewSceneShown(void);
 
 #endif /* PORT_VIEW_H */

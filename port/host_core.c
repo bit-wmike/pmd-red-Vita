@@ -16,6 +16,7 @@
 
 #include "port/port.h"
 #include "port/port_view.h"
+#include "port/port_overlay.h"
 #include "port/port_config.h"
 #include "port/port_game.h"
 #include "port/ppu/include/virtuappu.h"
@@ -170,6 +171,9 @@ static void RenderFrame(void)
         }
     }
 
+    /* port overlay (HP bars, clock) on top of the finished frame */
+    Port_OverlayDraw(sFrameBuffer, width, height, PORT_VIEW_MAX_W);
+
     Platform_Present(sFrameBuffer, width, height, PORT_VIEW_MAX_W, Port_ViewZoomHeight());
 }
 
@@ -190,6 +194,7 @@ void HostRunFrame(void)
     IO16(0x004) |= DISPSTAT_VBLANK;
     RaiseIrq(INTR_FLAG_VBLANK);
     Port_ViewOnVBlank();
+    Port_OverlayOnVBlank();
     virtuappu_mode1_commit_obj_metadata();
     IO16(0x004) &= ~DISPSTAT_VBLANK;
 

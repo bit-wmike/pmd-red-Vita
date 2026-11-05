@@ -99,6 +99,17 @@ int Port_ViewScene(void)
     return sScene;
 }
 
+void Port_ViewWorldShift(int *dx, int *dy)
+{
+    *dx = sDx;
+    *dy = sDy;
+}
+
+int Port_ViewSceneShown(void)
+{
+    return sSceneLatched;
+}
+
 void Port_SpriteStaged(int index, int x, int y)
 {
     if (index < 0 || index >= 128)
