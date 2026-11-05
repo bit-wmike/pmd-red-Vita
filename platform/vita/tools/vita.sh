@@ -6,6 +6,7 @@
 #                            (ux0:data/*.psp2dmp) and all screenshots
 #                            (ux0:picture/SCREENSHOT/**) from the Vita into runs/<name>/,
 #                            delete the screenshots and dumps on the Vita, commit, push
+#   ./vita.sh get <file>     fetch one file from ux0:data/pmd/ into files/ (e.g. textindex.bin)
 #   ./vita.sh vpk <file>     upload a VPK to ux0:data/pmd/ (install it with VitaShell)
 #   ./vita.sh install        git pull, then upload the newest builds/*.vpk of the data repo
 #   ./vita.sh log            show the tail of the Vita's log.txt without fetching
@@ -79,6 +80,15 @@ vpk)
     vpk="${2:?Pfad zur VPK fehlt}"
     upload "$vpk"
     echo "== $vpk liegt in $DATA/ - in VitaShell oeffnen und installieren"
+    ;;
+get)
+    # ./vita.sh get <file>   -> one file from ux0:data/pmd/ into files/ of the data repo (e.g. textindex.bin)
+    f="${2:?Dateiname fehlt, z. B. textindex.bin}"
+    mkdir -p "$here/files"
+    ftp "lcd '$here/files'; get $DATA/$f"
+    ls -la "$here/files/$f"
+    cd "$here" && git add "files/$f" && git commit -q -m "files: $f" && git pull -q --rebase --autostash origin main && git push -q origin main
+    echo "== $f liegt im Daten-Repo unter files/"
     ;;
 log)
     ftp "cat $DATA/log.txt" | tail -40

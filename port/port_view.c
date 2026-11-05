@@ -64,7 +64,8 @@ static int sActive;
 static int sWidth = PORT_GBA_W, sHeight = PORT_GBA_H;
 static int sDx, sDy;
 static int sContentW = PORT_GBA_W, sContentH = PORT_GBA_H;
-static int sPictureMap; /* the current ground map is a GBA-screen picture (S02 ...) */ /* the part of the frame that shows the map */
+static int sPictureMap; /* the current ground map is a GBA-screen picture (S02 ...) */
+static int sPictureClamp; /* ... and its edge columns are repeated into the margins (title only) */ /* the part of the frame that shows the map */
 static int sScene, sSceneLatched;
 static uint32_t sSceneFrame;
 
@@ -299,6 +300,7 @@ static int GroundInfo(int *camX, int *camY, int *mapW, int *mapH, int *wrap)
     GroundBg *g = gGroundMapDungeon_3001B70;
     PixelPos cam;
     sPictureMap = 0;
+    sPictureClamp = 0;
     if (g == NULL || g->unk474 <= 0 || g->mapRender[0].chunkDimensions == 0)
         return 0;
     if (!sub_809D248(&cam))
@@ -306,8 +308,10 @@ static int GroundInfo(int *camX, int *camY, int *mapW, int *mapH, int *wrap)
     if (UniformMap(&g->mapRender[0]))
         return 0;
     if (g->bpcFile != NULL && g->bpcFile->file != NULL && g->bpcFile->file->name != NULL) {
-        if (PictureMapName((const char *)g->bpcFile->file->name))
+        if (PictureMapName((const char *)g->bpcFile->file->name)) {
             sPictureMap = 1;
+            sPictureClamp = strncmp((const char *)g->bpcFile->file->name, "S02", 3) == 0;
+        }
     }
     *camX = cam.x;
     *camY = cam.y;
@@ -502,6 +506,14 @@ static void FillGround(int bg, const MapRender *mr, int layer, int x0, int y0, i
                 wx %= widthTiles;
                 if (wx < 0)
                     wx += widthTiles;
+            }
+            if (sPictureClamp && !mr->wrapAround) {
+                /* the title screen (S02): its edge columns continue into
+                 * the margins (sky and sea run on, the sea's reflection too) */
+                if (wx < 0)
+                    wx = 0;
+                else if (wx >= widthTiles)
+                    wx = widthTiles - 1;
             }
             if (wx < 0 || wy < 0 || wx >= widthTiles || wy >= heightTiles || cy >= mr->heightChunks ||
                 (sPictureMap && (ty * 8 < mr->cameraPos.y || ty * 8 >= mr->cameraPos.y + PORT_GBA_H))) {

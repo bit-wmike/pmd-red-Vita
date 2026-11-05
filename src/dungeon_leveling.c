@@ -1,6 +1,14 @@
 #include "global.h"
 #ifdef PORT
 #include "port/port_game.h"
+#ifdef PORT
+/* Port: the stat lines are glued together with waits before they reach
+ * the text engine; the whole is in no ROM, the lines are: translate each */
+#include "port/port_text.h"
+#define PORT_TEXT(s) ((const char *)Port_Text((const unsigned char *)(s)))
+#else
+#define PORT_TEXT(s) (s)
+#endif
 #endif
 #include "globaldata.h"
 #include "dungeon_leveling.h"
@@ -284,7 +292,7 @@ static void sub_807218C(Entity *pokemon)
 
     if(gFormatArgs[0]> 0)
     {
-        strcat(buffer, gUnknown_80F9ACC);
+        strcat(buffer, PORT_TEXT(gUnknown_80F9ACC));
         r6++;
     }
 
@@ -292,28 +300,28 @@ static void sub_807218C(Entity *pokemon)
     {
         if(gUnknown_8107010[r6] != 0)
             strcat(buffer, gUnknown_8107018[gUnknown_8107010[r6]]);
-        strcat(buffer, gUnknown_80F9AEC);
+        strcat(buffer, PORT_TEXT(gUnknown_80F9AEC));
         r6++;
     }
     if(gFormatArgs[2]> 0)
     {
         if(gUnknown_8107010[r6] != 0)
             strcat(buffer, gUnknown_8107018[gUnknown_8107010[r6]]);
-        strcat(buffer, gUnknown_80F9B10);
+        strcat(buffer, PORT_TEXT(gUnknown_80F9B10));
         r6++;
     }
     if(gFormatArgs[3]> 0)
     {
         if(gUnknown_8107010[r6] != 0)
             strcat(buffer, gUnknown_8107018[gUnknown_8107010[r6]]);
-        strcat(buffer, gUnknown_80F9B34);
+        strcat(buffer, PORT_TEXT(gUnknown_80F9B34));
         r6++;
     }
     if(gFormatArgs[4]> 0)
     {
         if(gUnknown_8107010[r6] != 0)
             strcat(buffer, gUnknown_8107018[gUnknown_8107010[r6]]);
-        strcat(buffer, gUnknown_80F9B58);
+        strcat(buffer, PORT_TEXT(gUnknown_80F9B58));
     }
 
     if(buffer[0])
