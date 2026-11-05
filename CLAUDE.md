@@ -95,7 +95,27 @@ Schalter: `PMD_SHOT=f1,f2` / `PMD_SHOT_EVERY=n` (PPM), `PMD_VIEW=0/1/2`, `PMD_WA
   PPMs** (`cmp`); (2) Renderer-Änderungen Bild für Bild gegen die alte Version vergleichen;
   (3) Vita-Build ohne Fehler.
 
-## Stand (0.1.8, 05.11.2026)
+## Stand (0.1.9, 05.11.2026)
+- 0.1.9 (Mikes `run2`: Absturz beim Aufheben einer Sinelbeere, fehlende NPC-Gesichter, dunkle
+  Ränder im hellen Dungeon, Titelbild-Streifen, englische Dungeon-Meldungen auf der Vita):
+  (1) **EU-Itemtabelle** (`itempara`) hat keine Namens-/Beschreibungszeiger (die EU sucht Namen
+  per ID); der US-Code las dort 0 → Absturz. `Port_FillPointerFields` (host_assets.c) trägt die
+  Zeigerfelder aus der Port-Kopie (Relocations) in die ROM-Datei ein, in `Port_ChooseFile` über
+  den SIRO-Inhalt (US-Datei hat die Beschreibungen zwischen Header und Tabelle).
+  (2) **baserom.gba-Teile** (Portraits `kao`, PCM-Samples) waren Löcher und wurden beim Laden
+  genullt – `Verify`/`TryPartial` kopieren jetzt die rohen ROM-Bytes (Hash weiter über den
+  Zwischenpuffer mit genullten Löchern; Zeigerlöcher patcht `Relocate`). Gesichter sind da.
+  (3) **Dunkle Ränder**: BG1 außerhalb des GBA-Rechtecks bekam immer die Dunkel-Kachel 0x27A;
+  jetzt nur, wenn die BG1-Tilemap des Spiels in den Ecken selbst 0x27A hält (`DarknessActive`).
+  (4) **Titelbild**: der Titel ist die Bodenkarte **S02** (288 px breit, mit Restzeilen unter dem
+  Meer); die Weitsicht zeigte diese Zeilen als Streifen unter dem Bild. `GroundInfo` behandelt
+  `S02c` als Bild ohne Karte; `Port_ViewBlankRows` schwärzt die Zeilen außerhalb der 160 GBA-
+  Zeilen (`RenderFrame`). Die Gesundheitswarnung ist ein weißes Vollbild (kein Fehler erkennbar).
+  Debug: `PMD_DARK_DEBUG=1` loggt alle 300 Bilder Szene, Inhalt, Fenster-/BG1-/DMA-Register und bpc-Name.
+  (5) Versionsnummer auf LiveArea-Bildern: `stamp_version.py` beim VPK-Bau (Makefile.port).
+  (6) `settings.ini`-Schlüssel `text_debug=1` protokolliert auf der Vita unübersetzte Texte.
+  **Lehre:** Nach Änderungen an `port/*.h` immer `rm -rf build/port-*` – sonst Struct-Versatz
+  (`gPortConfig.language` landete in `textDebug`, Text wieder englisch).
 - 0.1.8: **Quiz-Absturz gelöst** (Mikes `run1` im Daten-Repo: Dump + crumbs). Ursache: acht
   Textfunktionen in `src/text_4.c` stehen im Decomp mit `IWRAM_INIT` (Sektion `iwram_init`, auf
   dem GBA nach IWRAM kopiert) – im Vita-ELF lagen sie damit im **Datensegment** (RWE), das die

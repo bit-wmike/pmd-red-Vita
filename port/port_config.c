@@ -29,6 +29,7 @@ static struct Field sFields[] = {
     {"exp_multiplier", &gPortConfig.expMultiplier, 1, 4},
     {"no_hunger", &gPortConfig.noHunger, 0, 1},
     {"language", &gPortConfig.language, -1, 4},
+    {"text_debug", &gPortConfig.textDebug, 0, 1},
 };
 
 void Port_ConfigDefaults(void)

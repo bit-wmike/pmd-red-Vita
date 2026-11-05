@@ -40,6 +40,8 @@ void Port_OamSlot(int slot, int index);
 void Port_ViewBeforeLogicEnd(void);
 void Port_ViewOnVBlank(void);
 void Port_ViewBeforeRender(int *width, int *height);
+/* Rows of the frame that must stay black (no map there): [0,top) and [bottom,height). */
+void Port_ViewBlankRows(int *top, int *bottom);
 int Port_ViewWidth(void);
 int Port_ViewHeight(void);
 int Port_ViewZoomHeight(void);

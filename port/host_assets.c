@@ -217,7 +217,9 @@ static int Verify(struct Asset *a, uint32_t romOff)
     }
     if (Fnv64(sScratch, a->size) != a->hash)
         return 0;
-    memcpy(a->dst, sScratch, a->size);
+    /* the raw bytes: the holes hold baserom.gba parts (portraits, samples)
+     * that the hash cannot know, and pointers that Relocate() patches */
+    memcpy(a->dst, gHostRom + romOff, a->size);
     a->romAddr = romOff + 0x08000000u;
     a->found = 1;
     return 1;
@@ -240,21 +242,24 @@ static int TryPartial(struct Asset *a, uint32_t p)
     uint32_t i, ok = 0;
     if (a->found || a->chunkCount == 0 || (uint64_t)p + a->size > gHostRomSize)
         return 0;
-    memcpy(a->dst, gHostRom + p, a->size);
+    if (a->size > sScratchSize) {
+        sScratchSize = a->size;
+        sScratch = (unsigned char *)realloc(sScratch, sScratchSize);
+    }
+    memcpy(sScratch, gHostRom + p, a->size);
     for (i = 0; i < a->holeCount; i++) {
         uint32_t off = a->holes[i * 2], len = a->holes[i * 2 + 1];
         if (off + len <= a->size)
-            memset(a->dst + off, 0, len);
+            memset(sScratch + off, 0, len);
     }
     for (i = 0; i < a->chunkCount; i++) {
         uint32_t off = i * PORT_CHUNK, len = a->size - off < PORT_CHUNK ? a->size - off : PORT_CHUNK;
-        if (Fnv64(a->dst + off, len) == a->chunks[i])
+        if (Fnv64(sScratch + off, len) == a->chunks[i])
             ok++;
     }
-    if (ok * 2 < a->chunkCount) {
-        memset(a->dst, 0, a->size);
+    if (ok * 2 < a->chunkCount)
         return 0;
-    }
+    memcpy(a->dst, gHostRom + p, a->size); /* raw: see Verify() */
     Platform_Log("assets: %s taken over partly (%u of %u chunks)\n", a->name, ok, a->chunkCount);
     a->romAddr = p + 0x08000000u;
     a->found = 2;
@@ -890,6 +895,29 @@ static void FillArraysFromRomFiles(void)
         n++;
     }
     Platform_Log("assets: %u arrays filled with the files of the user's ROM (%u packed tilesets unpacked)\n", n, unpacked);
+}
+
+/* A file of the user's ROM in the port's layout but with empty pointer
+ * fields (the European item table has no name pointers, its game looks
+ * names up by id): the pointer fields of the port's copy are put in. */
+unsigned Port_FillPointerFields(const unsigned char *portCopy, unsigned char *romCopy, unsigned size)
+{
+    unsigned i, n = 0;
+    for (i = 0; i < gPortRelocCount; i++) {
+        const unsigned char *where = gPortRelocs[i].where;
+        uint32_t off, v;
+        if (where < portCopy || where >= portCopy + size)
+            continue;
+        off = (uint32_t)(where - portCopy);
+        if (off + 4 > size)
+            continue;
+        memcpy(&v, romCopy + off, 4);
+        if (v != 0)
+            continue;
+        memcpy(romCopy + off, where, 4);
+        n++;
+    }
+    return n;
 }
 
 const unsigned char *Port_RomFile(const char *name)

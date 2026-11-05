@@ -22,6 +22,7 @@ struct PortConfig {
     /* cheats that only ease the mechanics */
     int expMultiplier;   /* 1..4: experience gained in dungeons */
     int noHunger;
+    int textDebug;       /* log every text without a translation */
     int language;        /* PORT_LANG_*: -1 = not chosen yet (European ROM only) */        /* the belly does not go down */
 };
 

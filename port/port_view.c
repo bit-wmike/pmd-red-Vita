@@ -180,10 +180,63 @@ static int ClampToRoom(int size, int room, int gba)
     return size;
 }
 
+/* Is a DMA channel set to run at every HBlank (a per-line effect)? */
+static int HBlankDmaActive(void)
+{
+    static const unsigned cnt[3] = {0x0C6, 0x0D2, 0x0DE}; /* DMA1..3 CNT_H */
+    unsigned k;
+    for (k = 0; k < 3; k++) {
+        uint16_t v;
+        memcpy(&v, gHostIo + cnt[k], 2);
+        if ((v & 0x8000) && ((v >> 12) & 3) == 2)
+            return 1;
+    }
+    return 0;
+}
+
+/* Is the dungeon darkness in effect? Then the game fills its BG1 tilemap
+ * with the dark tile 0x27A (the window around the player cuts a hole);
+ * on a lit floor BG1 holds other entries. The four corners are sampled. */
+static int DarknessActive(void)
+{
+    uint16_t cnt, entry, dispcnt, winout;
+    unsigned base, dark = 0, k;
+    static const unsigned char corners[4][2] = {{0, 0}, {29, 0}, {0, 19}, {29, 19}};
+    /* with windows on, the margins count as "outside": BG1 shows there only
+     * if WINOUT lets it (dark floors: yes, the hole around the player is the
+     * window; lit floors: empty windows and WINOUT hides BG1) */
+    memcpy(&dispcnt, gHostIo + 0x00, 2);
+    memcpy(&winout, gHostIo + 0x4A, 2);
+    if (dispcnt & 0x6000)
+        return (winout & 2) != 0;
+    memcpy(&cnt, gHostIo + 0x0A, 2); /* BG1CNT */
+    base = ((cnt >> 8) & 31) * 0x800;
+    for (k = 0; k < 4; k++) {
+        memcpy(&entry, gHostVram + base + (corners[k][1] * 32 + corners[k][0]) * 2, 2);
+        if ((entry & 0x3FF) == 0x27A)
+            dark++;
+    }
+#ifndef __vita__
+    if (getenv("PMD_DARK_DEBUG") && Port_FrameCounter() % 300 == 0) {
+        uint16_t io[8];
+        memcpy(io, gHostIo, 16);
+        Platform_Log("dark: frame %u dispcnt %04x bg1cnt %04x base %x corners dark %u win0h %04x win0v %04x win1h %04x win1v %04x winin %04x winout %04x\n",
+                     Port_FrameCounter(), io[0], cnt, base, dark, *(uint16_t *)(gHostIo + 0x40), *(uint16_t *)(gHostIo + 0x44),
+                     *(uint16_t *)(gHostIo + 0x42), *(uint16_t *)(gHostIo + 0x46), *(uint16_t *)(gHostIo + 0x48), *(uint16_t *)(gHostIo + 0x4A));
+    }
+#endif
+    return dark >= 3;
+}
+
 /* The ground map's camera (top-left of the GBA screen) and map size. */
 static int GroundInfo(int *camX, int *camY, int *mapW, int *mapH, int *wrap)
 {
     GroundBg *g = gGroundMapDungeon_3001B70;
+    /* the title screen is the ground map S02: a picture made for the
+     * 240x160 screen with stray rows below it; shown without a map */
+    if (g != NULL && g->bpcFile != NULL && g->bpcFile->file != NULL && g->bpcFile->file->name != NULL &&
+        strcmp((const char *)g->bpcFile->file->name, "S02c") == 0)
+        return 0;
     PixelPos cam;
     if (g == NULL || g->unk474 <= 0 || g->mapRender[0].chunkDimensions == 0)
         return 0;
@@ -208,8 +261,10 @@ void Port_ViewOnVBlank(void)
     int w, h, cw, ch;
     int camX = 0, camY = 0, mapW = 0, mapH = 0, wrap = 0;
 
-    /* A scene stays current until another frame function reports. */
-    sSceneLatched = sScene;
+    /* A scene stays current while its frame function keeps reporting;
+     * after two frames without a report (title screen, menus) the frame
+     * is a picture without a map again. */
+    sSceneLatched = (Port_FrameCounter() - sSceneFrame <= 2) ? sScene : PORT_SCENE_NONE;
     SizeForMode(gPortViewMode, &w, &h);
     sActive = (w != PORT_GBA_W || h != PORT_GBA_H);
     sWidth = w;
@@ -477,6 +532,39 @@ static void DumpState(void)
 }
 
 /* Called right before a frame is rendered. */
+/* Scenes without a map (title, menus): the game's tilemaps hold rows
+ * beyond the 160 GBA lines (scroll effects such as the title screen's
+ * sea), which must not show above or below the GBA picture. */
+void Port_ViewBlankRows(int *top, int *bottom)
+{
+#ifndef __vita__
+    if (getenv("PMD_DARK_DEBUG") && Port_FrameCounter() % 300 == 0)
+    {
+        uint16_t d1, d2, d3, dispstat;
+        memcpy(&d1, gHostIo + 0x0C6, 2); memcpy(&d2, gHostIo + 0x0D2, 2); memcpy(&d3, gHostIo + 0x0DE, 2); memcpy(&dispstat, gHostIo + 4, 2);
+        Platform_Log("blank: active %d scene %d content %dx%d dx %d dy %d dma %04x %04x %04x dispstat %04x bpc %s\n", sActive, sSceneLatched, sContentW, sContentH, sDx, sDy, d1, d2, d3, dispstat,
+                     (gGroundMapDungeon_3001B70 && gGroundMapDungeon_3001B70->bpcFile && gGroundMapDungeon_3001B70->bpcFile->file) ? (const char *)gGroundMapDungeon_3001B70->bpcFile->file->name : "-");
+    }
+#endif
+    /* a scene without a map keeps the frame as content (the picture is
+     * centred, the renderer wraps the tilemaps outside): only the 160 GBA
+     * rows may show */
+    if (!sActive) {
+        *top = 0;
+        *bottom = 0;
+        return;
+    }
+    /* per-line effects (HBlank DMA: the title screen's sea) exist for the
+     * 160 GBA lines only: the rows outside would show the map without them */
+    if (sSceneLatched != PORT_SCENE_NONE && sContentH > PORT_GBA_H && !HBlankDmaActive()) {
+        *top = 0;
+        *bottom = 0;
+        return;
+    }
+    *top = sDy;
+    *bottom = sDy + PORT_GBA_H;
+}
+
 void Port_ViewBeforeRender(int *width, int *height)
 {
     int i, cols;
@@ -506,7 +594,10 @@ void Port_ViewBeforeRender(int *width, int *height)
         virtuappu_mode1_bg_dy[i] = (-sDy) & 0x1FF;
     }
     FillUi(0, BLANK_ENTRY, cols);
-    FillUi(1, DARK_ENTRY, cols);
+    /* BG1 carries the darkness: the game hides it inside its window. A
+     * window over the whole GBA screen (a lit floor, a ground scene) means
+     * nothing is dark, so the margins get no dark tile either. */
+    FillUi(1, DarknessActive() ? DARK_ENTRY : BLANK_ENTRY, cols);
     ShadowSet(0, 1);
     ShadowSet(1, 1);
 

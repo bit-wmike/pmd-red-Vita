@@ -774,7 +774,7 @@ const unsigned char *Port_Text(const unsigned char *s)
         return s;
     if (!sInitDone) {
         sInitDone = 1;
-        sDebug = getenv("PMD_TEXT_DEBUG") != NULL;
+        sDebug = getenv("PMD_TEXT_DEBUG") != NULL || gPortConfig.textDebug;
         sEnabled = Port_TextMultilingual();
         if (sEnabled)
             BuildIndex();

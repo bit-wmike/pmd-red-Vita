@@ -155,6 +155,20 @@ static void RenderFrame(void)
     virtuappu_mode1_render_frame(&ppu);
     Port_ProfileEnd(PORT_PROF_RENDER);
     sRendering = 0;
+    {
+        int top, bottom, y;
+        Port_ViewBlankRows(&top, &bottom);
+#ifndef __vita__
+        if (getenv("PMD_DARK_DEBUG") && sFrameCounter % 300 == 0)
+            Platform_Log("blankrows: top %d bottom %d width %d height %d\n", top, bottom, width, height);
+#endif
+        if (bottom > top) {
+            for (y = 0; y < top && y < height; y++)
+                memset(sFrameBuffer + y * PORT_VIEW_MAX_W, 0, (size_t)width * 4);
+            for (y = bottom; y < height; y++)
+                memset(sFrameBuffer + y * PORT_VIEW_MAX_W, 0, (size_t)width * 4);
+        }
+    }
 
     Platform_Present(sFrameBuffer, width, height, PORT_VIEW_MAX_W, Port_ViewZoomHeight());
 }

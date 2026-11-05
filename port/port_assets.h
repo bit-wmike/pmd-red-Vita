@@ -56,6 +56,7 @@ unsigned Port_RomFileSize(const char *name);
 /* Translates every 4-aligned word of the file that looks like a GBA ROM
  * address into a host pointer (once per file). For files of another ROM
  * version that carry pointers (charmaps, parameter tables). */
+unsigned Port_FillPointerFields(const unsigned char *portCopy, unsigned char *romCopy, unsigned size);
 void Port_RelocateRomFile(const unsigned char *data, unsigned size);
 /* How the port got the data block that contains `p`: 0 unknown, 1 exact,
  * 2 partial, 4 embedded fallback, -1 not found. `holes` receives the number
