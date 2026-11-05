@@ -8,6 +8,7 @@
 #                            delete the screenshots and dumps on the Vita, commit, push
 #   ./vita.sh vpk <file>     upload a VPK to ux0:data/pmd/ (install it with VitaShell)
 #   ./vita.sh log            show the tail of the Vita's log.txt without fetching
+#   ./vita.sh set key=value  change one key of settings.ini on the Vita (e.g. text_debug=1)
 #
 # Needs: lftp (sudo apt install lftp), VitaShell with its FTP server running
 # (SELECT in VitaShell), and the Vita's address in vita.conf next to this
@@ -45,7 +46,9 @@ fetch)
     ls -la "$out" "$out/screenshots" 2>/dev/null | head -40
     cd "$here"
     git add -A "runs/$name"
-    git commit -q -m "Vita run $name" && git push
+    git commit -q -m "Vita run $name"
+    git pull -q --rebase origin main || true
+    git push
     echo "== fertig: runs/$name ist auf GitHub"
     ;;
 vpk)
@@ -55,6 +58,18 @@ vpk)
     ;;
 log)
     ftp "cat $DATA/log.txt" | tail -40
+    ;;
+set)
+    # ./vita.sh set text_debug=1   -> changes one key of settings.ini on the Vita
+    kv="${2:?key=value fehlt, z. B. text_debug=1}"
+    key="${kv%%=*}"
+    tmp="$(mktemp)"
+    ftp "get -O '$(dirname "$tmp")' $DATA/settings.ini -o '$(basename "$tmp")'" 2>/dev/null || true
+    grep -v "^$key=" "$tmp" > "$tmp.new" 2>/dev/null || true
+    echo "$kv" >> "$tmp.new"
+    ftp "put -O $DATA '$tmp.new' -o settings.ini"
+    rm -f "$tmp" "$tmp.new"
+    echo "== settings.ini auf der Vita: $kv (gilt ab dem naechsten Start des Spiels)"
     ;;
 *)
     sed -n 2,14p "$0"

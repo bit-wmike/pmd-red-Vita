@@ -149,6 +149,7 @@ static int TextPtr(uint32_t site, uint32_t *target)
 
 static void BuildPools(void);
 static void BuildRegions(void);
+static void PreferEnglishStrings(void);
 
 static void BuildIndex(void)
 {
@@ -187,6 +188,7 @@ static void BuildIndex(void)
     BuildPools();
     BuildRegions();
     TLOG("pools built");
+    PreferEnglishStrings();
 }
 
 static int HasSite(uint32_t off)
@@ -262,15 +264,36 @@ static long GroupLookup(uint32_t r, int lang)
 }
 
 /* The pointer run (4-byte stride) around a site: start and count. */
-static uint32_t RunAround(uint32_t site, uint32_t *count)
+/* The stride of the table around the current site: 4 for a plain pointer
+ * table, 8/12/16 for a table of structs (text pointer + flags). */
+static uint32_t sStride = 4;
+
+static uint32_t RunWithStride(uint32_t site, uint32_t stride, uint32_t *count)
 {
     uint32_t t, s = site, e = site;
-    while (s >= 4 && StringPtr(s - 4, &t))
-        s -= 4;
-    while (StringPtr(e + 4, &t))
-        e += 4;
-    *count = (e - s) / 4 + 1;
+    while (s >= stride && StringPtr(s - stride, &t))
+        s -= stride;
+    while (StringPtr(e + stride, &t))
+        e += stride;
+    *count = (e - s) / stride + 1;
     return s;
+}
+
+/* The longest run of string pointers through the site among the strides. */
+static uint32_t RunAround(uint32_t site, uint32_t *count)
+{
+    uint32_t best = 0, bestStart = site, bestStride = 4, k;
+    for (k = 4; k <= 16; k += 4) {
+        uint32_t n, st = RunWithStride(site, k, &n);
+        if (n > best) {
+            best = n;
+            bestStart = st;
+            bestStride = k;
+        }
+    }
+    sStride = bestStride;
+    *count = best;
+    return bestStart;
 }
 
 static uint32_t Target(uint32_t site)
@@ -290,15 +313,15 @@ static int SameString(uint32_t a, uint32_t b)
  * text? */
 static int ParallelAt(uint32_t start, uint32_t count, uint32_t idx, long d)
 {
-    uint32_t j, text = 0, t;
-    long first = (long)start + d, last = first + 4 * (long)(count - 1);
+    uint32_t j, text = 0, t, st = sStride;
+    long first = (long)start + d, last = first + (long)st * (long)(count - 1);
     (void)idx;
-    if (first < 4 || (uint64_t)last + 8 > gHostRomSize)
+    if (first < (long)st || (uint64_t)last + 2 * st > gHostRomSize)
         return 0;
-    if (StringPtr((uint32_t)first - 4, &t) || StringPtr((uint32_t)last + 4, &t))
+    if (StringPtr((uint32_t)first - st, &t) || StringPtr((uint32_t)last + st, &t))
         return 0;
     for (j = 0; j < count; j++) {
-        if (!StringPtr((uint32_t)first + 4 * j, &t))
+        if (!StringPtr((uint32_t)first + st * j, &t))
             return 0;
         if (gHostRom[t] && Texty(t))
             text++;
@@ -327,7 +350,7 @@ static int TableLanguage(uint32_t start, uint32_t n, uint32_t step)
     uint32_t j;
     int k, w, best = -1;
     for (j = 0; j < n; j += step) {
-        uint32_t p = Target(start + 4 * j);
+        uint32_t p = Target(start + sStride * j);
         for (; gHostRom[p]; p++) {
             unsigned c = gHostRom[p];
             if (c >= 0xc0 && c != 0xe9) {
@@ -359,6 +382,8 @@ static int TableLanguage(uint32_t start, uint32_t n, uint32_t step)
     return best;
 }
 
+static int LangNearRegion(uint32_t off);
+
 /* Scheme 2: parallel pointer tables. */
 static long TableLookup(uint32_t r, int lang)
 {
@@ -370,17 +395,17 @@ static long TableLookup(uint32_t r, int lang)
     start = RunAround((uint32_t)site, &count);
     if (count < RUN_MIN)
         return -1;
-    idx = ((uint32_t)site - start) / 4;
-    end = start + count * 4;
+    idx = ((uint32_t)site - start) / sStride;
+    end = start + count * sStride;
     /* five tables in one piece: the Italian/Spanish names often equal the
      * English ones, unrelated tables share nothing */
     sub = (count + 2) / PORT_LANG_COUNT; /* a run may lose its last entries */
     if (sub >= RUN_MIN) {
         step = sub / 64 ? sub / 64 : 1;
         for (j = 1; j + 1 < sub && j + 3 * sub < count; j += step) {
-            uint32_t a = Target(start + 4 * j), b = Target(start + 4 * (j + 3 * sub)), c = Target(start + 4 * (j + sub));
+            uint32_t a = Target(start + sStride * j), b = Target(start + sStride * (j + 3 * sub)), c = Target(start + sStride * (j + sub));
             /* a repeated default entry (battle messages) says nothing */
-            if (gHostRom[a] == 0 || SameString(a, Target(start + 4 * (j - 1))) || SameString(a, Target(start + 4 * (j + 1))))
+            if (gHostRom[a] == 0 || SameString(a, Target(start + sStride * (j - 1))) || SameString(a, Target(start + sStride * (j + 1))))
                 continue;
             tested++;
             if (SameString(a, b) || SameString(a, c))
@@ -388,14 +413,14 @@ static long TableLookup(uint32_t r, int lang)
         }
         /* sentences: the sub-tables read as the languages in order */
         if (!(tested >= 4 && same * 10 >= tested) && ((uint32_t)lang + 1) * sub <= count &&
-            TableLanguage(start, sub, step) == PORT_LANG_EN && TableLanguage(start + 4 * (uint32_t)lang * sub, sub, step) == lang) {
+            TableLanguage(start, sub, step) == PORT_LANG_EN && TableLanguage(start + sStride * (uint32_t)lang * sub, sub, step) == lang) {
             tested = 1;
             same = 1;
         }
         if (tested >= 4 && same * 10 >= tested) {
             if (idx >= sub || idx + (uint32_t)lang * sub >= count)
                 return -1; /* not in the English table */
-            return (long)Target(start + 4 * (idx + (uint32_t)lang * sub));
+            return (long)Target(start + sStride * (idx + (uint32_t)lang * sub));
         }
     }
     /* table, strings, table, strings: the parallel tables after this one,
@@ -410,11 +435,11 @@ static long TableLookup(uint32_t r, int lang)
             return -1; /* a translation handed out before */
         d = (long)(end - start);
         while (ncand < PORT_LANG_COUNT - 1 && d < (long)(end - start) + (long)RUN_GAP) {
-            if ((uint64_t)start + d + count * 4 > gHostRomSize)
+            if ((uint64_t)start + d + count * sStride > gHostRomSize)
                 break;
             if (ParallelAt(start, count, idx, d)) {
                 cand[ncand++] = d;
-                d += (long)count * 4;
+                d += (long)count * sStride;
             } else
                 d += 4;
         }
@@ -422,8 +447,10 @@ static long TableLookup(uint32_t r, int lang)
             int langs[PORT_LANG_COUNT];
             for (c = 0; c < ncand; c++) {
                 langs[c] = TableLanguage((uint32_t)((long)start + cand[c]), count, count / 512 + 1);
+                if (langs[c] == -1)
+                    langs[c] = LangNearRegion((uint32_t)((long)start + cand[c]));
                 if (langs[c] == lang)
-                    return (long)Target((uint32_t)((long)start + 4 * idx + cand[c]));
+                    return (long)Target((uint32_t)((long)start + sStride * idx + cand[c]));
             }
             for (c = 0; c < ncand; c++)
                 if (langs[c] != -1 && langs[c] != c + 1)
@@ -432,7 +459,7 @@ static long TableLookup(uint32_t r, int lang)
         /* the language not readable (short names), the others in the usual
          * order: take the position */
         if (ncand >= lang)
-            return (long)Target((uint32_t)((long)start + 4 * idx + cand[lang - 1]));
+            return (long)Target((uint32_t)((long)start + sStride * idx + cand[lang - 1]));
         return -1;
     }
 }
@@ -698,6 +725,17 @@ static void BuildRegions(void)
     }
 }
 
+/* The language of the code-data region at or shortly after off (the
+ * tables of a translation unit lie just before its strings). */
+static int LangNearRegion(uint32_t off)
+{
+    int i;
+    for (i = 0; i < sRegionCount; i++)
+        if (off + 0x1000 >= sRegions[i].start && off < sRegions[i].end && sRegions[i].lang != PORT_LANG_EN)
+            return sRegions[i].lang;
+    return -1;
+}
+
 static long RegionLookup(uint32_t r, int lang)
 {
     int i, j;
@@ -731,6 +769,36 @@ static long RegionLookup(uint32_t r, int lang)
         return -1;
     }
     return -1;
+}
+
+static void PreferEnglishStrings(void)
+{
+    uint32_t i;
+    /* the English pools and regions win over other languages' identical
+     * words elsewhere (a French "Place" lies before the English one) */
+    for (i = 0; i < (uint32_t)sPoolCount + (uint32_t)sRegionCount; i++) {
+        uint32_t a, b, p;
+        if (i < (uint32_t)sPoolCount) {
+            if (sPools[i].lang != PORT_LANG_EN)
+                continue;
+            a = sPools[i].start;
+            b = sPools[i].end;
+        } else {
+            if (sRegions[i - sPoolCount].lang != PORT_LANG_EN)
+                continue;
+            /* the menu tables of the unit lie shortly before its strings */
+            a = sRegions[i - sPoolCount].start > 0x1000 ? sRegions[i - sPoolCount].start - 0x1000 : 0;
+            b = sRegions[i - sPoolCount].end;
+        }
+        for (p = a + 1; p < b; p++) {
+            long e;
+            if (gHostRom[p] == 0 || !StringStart(p))
+                continue;
+            e = StrEnd(p);
+            if (e >= 0 && e - p >= 2 && Texty(p))
+                Put(sIndex, INDEX_BITS, Fnv32(gHostRom + p, (size_t)(e - p)), p, 0);
+        }
+    }
 }
 
 int Port_TextMultilingual(void)
