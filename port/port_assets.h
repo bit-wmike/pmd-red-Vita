@@ -64,6 +64,9 @@ void Port_RelocateRomFile(const unsigned char *data, unsigned size);
  * 2 partial, 4 embedded fallback, -1 not found. `holes` receives the number
  * of pointer slots of that block. */
 int Port_AssetStateAt(const void *p, unsigned *holes);
+/* 1 when that block holds baserom.gba data the port could not fill from the ROM. */
+int Port_AssetIncompleteAt(const void *p);
+int Port_AssetIncompleteIn(const void *p, unsigned size);
 /* Pointer slots of that block from p on (holes of at most 64 bytes). */
 unsigned Port_AssetPointersFrom(const void *p);
 /* AT4PX / AT4PN / ATUPX / PKDPX: compressed file content (no pointers inside). */

@@ -51,7 +51,9 @@ static const File *Port_ChooseFile(const File *file, s32 cursor)
      * (a guess for blocks the decomp keeps as baserom.gba bytes, such as the
      * title menu pictures titlen0..2): the file of the same name in the
      * ROM's own archive is the better source */
-    if (contentState != -1 && contentState != 2 && contentState != 6 && state != -1 && state != 2 && state != 6)
+    if (contentState != -1 && contentState != 2 && contentState != 6 && state != -1 && state != 2 && state != 6 &&
+        !Port_AssetIncompleteIn(d, Port_RomFile(file->name) ? Port_RomFileSize(file->name) : 16) &&
+        !(d[0] == 'S' && d[1] == 'I' && d[2] == 'R' && d[3] == 'O' && Port_AssetIncompleteAt(((const SiroArchive *)d)->data)))
         return file; /* identical in the user's ROM, or compiled data of the port */
     rom = Port_RomFile(file->name);
     if (rom == NULL) {

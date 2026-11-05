@@ -142,6 +142,27 @@ static void RenderFrame(void)
         bound = 1;
     }
 
+#ifndef __vita__
+    {
+        /* PMD_DUMP_AT=frame: VRAM, palette, OAM and IO of that frame as
+         * dump_<frame>.bin (0x18000 + 0x400 + 0x400 + 0x400 bytes) */
+        static int dumpAt = -2;
+        if (dumpAt == -2)
+            dumpAt = getenv("PMD_DUMP_AT") ? atoi(getenv("PMD_DUMP_AT")) : -1;
+        if ((int)sFrameCounter == dumpAt) {
+            char name[64];
+            snprintf(name, sizeof(name), "dump_%05d.bin", dumpAt);
+            {
+                static unsigned char buf[0x18000 + 0xC00];
+                memcpy(buf, gHostVram, 0x18000);
+                memcpy(buf + 0x18000, gHostPalram, 0x400);
+                memcpy(buf + 0x18400, gHostOam, 0x400);
+                memcpy(buf + 0x18800, gHostIo, 0x400);
+                Platform_WriteFile(name, buf, sizeof(buf));
+            }
+        }
+    }
+#endif
     Port_ViewBeforeRender(&width, &height);
 
     memset(&ppu, 0, sizeof(ppu));

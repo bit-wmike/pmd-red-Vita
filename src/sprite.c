@@ -502,10 +502,23 @@ static void sub_800533C(const ax_pose *const *a0, const ax_sprite *const *a1, ax
     r4 = a0[a2->poseId];
     sCharMemCursor = OBJ_VRAM0 + (a2->vramTileOrMaybeAnimTimer * 0x20);
     for (mem = NULL; (u16)r4->sprite != 0xFFFF || *((u16*)&r4->unk2) != 0xFFFF; r4++, mem = NULL) {
+#ifdef PORT
+        /* Port: files without sprite data (world map markers: their tiles
+         * are in VRAM already) read address 0 on the GBA (BIOS, harmless) */
+        if (a4 != 0 && r4->sprite > -1 && a1 != NULL)
+#else
         if (a4 != 0 && r4->sprite > -1)
+#endif
             mem = a1[r4->sprite];
 
         AddAxSprite(r4, a2, mem, spriteMasks);
+#ifdef PORT
+        /* Port: the European world map markers (wmapspr) have one entry
+         * per pose and no end marker: a pose ends where the next one starts,
+         * and the last one after one entry when its table is one-entry */
+        if (r4 + 1 == a0[a2->poseId + 1] || (a2->poseId > 0 && r4 == a0[a2->poseId] && a0[a2->poseId] == a0[a2->poseId - 1] + 1))
+            break;
+#endif
     }
 }
 

@@ -786,6 +786,51 @@ static void BuildAddressIndex(void)
     qsort(sByAddress, n, sizeof(*sByAddress), CompareByDst);
 }
 
+/* Does the block that contains p hold baserom.gba data (a hole over 64
+ * bytes)? Such a block is unreliable whatever its state (embedded zeros,
+ * placed by neighbours, or matched by its few known bytes at a wrong
+ * place): a file made of it is better taken from the ROM's own archive. */
+int Port_AssetIncompleteAt(const void *p)
+{
+    size_t lo = 0, hi = sByAddressCount;
+    const unsigned char *q = (const unsigned char *)p;
+    const struct Asset *a;
+    while (lo < hi) {
+        size_t mid = (lo + hi) / 2;
+        if (sByAddress[mid]->dst + sByAddress[mid]->size <= q)
+            lo = mid + 1;
+        else
+            hi = mid;
+    }
+    if (lo >= sByAddressCount || sByAddress[lo]->dst > q)
+        return 0;
+    a = sByAddress[lo];
+    return LargeHole(a);
+}
+
+/* Is any block in [p, p + size) incomplete (see Port_AssetIncompleteAt)?
+ * A file of the port's data may consist of many blocks (wmapspr). */
+int Port_AssetIncompleteIn(const void *p, unsigned size)
+{
+    size_t lo = 0, hi = sByAddressCount;
+    const unsigned char *q = (const unsigned char *)p, *end = q + size;
+    while (lo < hi) {
+        size_t mid = (lo + hi) / 2;
+        if (sByAddress[mid]->dst + sByAddress[mid]->size <= q)
+            lo = mid + 1;
+        else
+            hi = mid;
+    }
+    for (; lo < sByAddressCount && sByAddress[lo]->dst < end; lo++) {
+        /* any state: a block that is mostly baserom.gba bytes can be
+         * "found" by its few known bytes at a wrong place (wmp2font matched
+         * code at 0x0b70e8 of the European ROM) */
+        if (LargeHole(sByAddress[lo]))
+            return 1;
+    }
+    return 0;
+}
+
 int Port_AssetStateAt(const void *p, unsigned *holes)
 {
     size_t lo = 0, hi = sByAddressCount;
@@ -949,10 +994,13 @@ void Port_RelocateRomFile(const unsigned char *data, unsigned size)
         return;
     if (f)
         f->relocated = 1;
+    /* only pointers into the file itself: the archives' files point at
+     * their own parts (tables, frames); a word of image data that happens
+     * to look like a ROM address points elsewhere (portraits kao***) */
     for (i = 0; i + 4 <= size; i += 4) {
         uint32_t v;
         memcpy(&v, data + i, 4);
-        if (v >= 0x08000000u && v - 0x08000000u < gHostRomSize) {
+        if (v >= 0x08000000u + off && v < 0x08000000u + off + (f ? f->size : size)) {
             const void *host = gHostRom + (v - 0x08000000u);
             memcpy((unsigned char *)data + i, &host, 4);
             n++;
