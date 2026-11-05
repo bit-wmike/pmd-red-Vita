@@ -95,7 +95,20 @@ Schalter: `PMD_SHOT=f1,f2` / `PMD_SHOT_EVERY=n` (PPM), `PMD_VIEW=0/1/2`, `PMD_WA
   PPMs** (`cmp`); (2) Renderer-Änderungen Bild für Bild gegen die alte Version vergleichen;
   (3) Vita-Build ohne Fehler.
 
-## Stand (0.1.6, 05.11.2026)
+## Stand (0.1.7, 05.11.2026)
+- 0.1.7: Mikes Test von 0.1.6: **Absturz am Ende des Quiz** (bei der letzten Frage bzw. bei „du
+  scheinst der … Typ zu sein“); der psp2dmp bleibt bei 10 % hängen. Auf dem Host läuft dieselbe
+  Stelle durch (auch unter qemu-arm). Deshalb: **Breadcrumbs** – `Port_Crumb()` (port_game.c)
+  sammelt die letzten 24 Aktionen (geöffnete Dateien, Textabfragen, Szenenwechsel); die Vita
+  schreibt sie alle 30 Bilder nach `ux0:data/pmd/crumbs.txt` (`WriteCrumbs` in main_vita.c).
+  Nach einem Absturz zeigt die Datei, was zuletzt passierte. Verdächtige (ungeprüft): Vita-spezifisch
+  sind nur Speicher (Heap 160 MiB: ROM 32 + Textindex ~11 MiB), Ausrichtung, Thread-Stack.
+  **Daten-Workflow:** `platform/vita/tools/vita.sh` (läuft auf Mikes Pi im Daten-Repo
+  `pmd-vita-data`): `./vita.sh fetch runN` holt per FTP (VitaShell) log.txt, log_prev.txt,
+  crumbs.txt, settings.ini, quicksave.bin, alle `ux0:data/*.psp2dmp` und alle Screenshots,
+  löscht Screenshots/Dumps auf der Vita, committet und pusht; `./vita.sh vpk <datei>` lädt eine
+  VPK nach `ux0:data/pmd/`. Konfiguration `vita.conf` (`VITA=<IP>`). Die Läufe liegen dann unter
+  `runs/<name>/` im Daten-Repo (per `add_repo` in der Cloud-Sitzung lesbar).
 - 0.1.6: **Spieltext in Deutsch/Französisch/Italienisch/Spanisch aus der EU-ROM** (`port/port_text.c`).
   Der US-Code liefert englische Strings (Binary + Datenblöcke); `Port_Text(s)` ersetzt sie zur
   Laufzeit über einen Index aller Strings der ROM (Inhalt → erste Fundstelle). Drei Ablageformen

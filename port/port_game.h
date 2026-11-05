@@ -9,6 +9,8 @@
 
 uint16_t Port_TranslateKeys(uint16_t keys);
 void Port_GameFrame(int mainLoop);
+void Port_Crumb(const char *fmt, ...);
+int Port_CrumbText(char *buf, int size);
 void Port_RequestQuickSave(void);
 void Port_RequestQuickLoad(void);
 void Port_ShowMessage(const char *text);

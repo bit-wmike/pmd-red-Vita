@@ -16,6 +16,7 @@
 #include "port.h"
 #include "port_config.h"
 #include "port_text.h"
+#include "port_game.h"
 #ifdef TEXT_TIMING
 #include <time.h>
 #define TLOG(what) Platform_Log("text: %s at %.2f s\n", what, (double)clock() / CLOCKS_PER_SEC)
@@ -787,6 +788,8 @@ const unsigned char *Port_Text(const unsigned char *s)
         sCacheLang = lang;
     }
     sCalls++;
+    if ((sCalls & 7) == 0 || sCalls < 64)
+        Port_Crumb("text %.40s", s);
     if (s >= gHostRom && s < gHostRom + gHostRomSize) {
         r = s - gHostRom;
         if (r == 0 || gHostRom[r - 1] != 0)

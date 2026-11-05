@@ -519,10 +519,26 @@ static void RunMenu(void)
 static int sWaitRelease; /* after the menu: ignore buttons until released */
 /* The rear touch panel is deliberately unused: it is too easy to touch by accident. */
 
+/* crumbs.txt: the last actions of the game, rewritten twice a second (a
+ * crash without a usable core dump still leaves this trace). */
+static void WriteCrumbs(void)
+{
+    static unsigned sCount;
+    static char buf[2048];
+    int n;
+    if (++sCount % 30)
+        return;
+    n = snprintf(buf, sizeof(buf), "pmd %s crumbs (newest last)\n", PMD_PORT_VERSION);
+    n += Port_CrumbText(buf + n, (int)sizeof(buf) - n);
+    Platform_WriteFile("crumbs.txt", buf, (size_t)n);
+}
+
 uint16_t Platform_PollKeys(void)
 {
     SceCtrlData pad;
     uint16_t keys = 0;
+
+    WriteCrumbs();
 
     sceCtrlPeekBufferPositive(0, &pad, 1);
     if ((pad.buttons & (SCE_CTRL_START | SCE_CTRL_SELECT)) == (SCE_CTRL_START | SCE_CTRL_SELECT)) {

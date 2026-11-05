@@ -1,4 +1,7 @@
 #include "global.h"
+#ifdef PORT
+#include "../port/port_game.h"
+#endif
 #include <stdlib.h>
 #include "globaldata.h"
 #include "decompress_sir.h"
@@ -107,6 +110,9 @@ OpenedFile *OpenFile(const u8 *filename, const FileArchive *arc)
     bool32 magicFound;
     const File *entries;
     const File *file;
+#ifdef PORT
+    Port_Crumb("open %s", filename);
+#endif
 
     magic = AreStringsDifferent(arc->magic, sPksDir0);
 

@@ -3,6 +3,7 @@
  * save / quick load (a snapshot of the whole game state).
  */
 #include <stdlib.h>
+#include <stdarg.h>
 #include <string.h>
 
 #include "port/port.h"
@@ -32,6 +33,38 @@ int Port_TurboActive(void)
 /* --------------------------------------------------------------- cheats */
 
 void Port_ApplyCheats(void); /* port/port_cheats.c */
+
+/* ------------------------------------------------------------- crumbs */
+
+/* The last few things the game did (files opened, text looked up, scene
+ * changes): the Vita writes them to crumbs.txt twice a second, so that a
+ * crash without a usable core dump still leaves a trace. */
+#define CRUMB_COUNT 24
+#define CRUMB_LEN 72
+static char sCrumbs[CRUMB_COUNT][CRUMB_LEN];
+static unsigned sCrumbNext, sCrumbTotal;
+
+void Port_Crumb(const char *fmt, ...)
+{
+    va_list ap;
+    char *line = sCrumbs[sCrumbNext % CRUMB_COUNT];
+    int n = snprintf(line, CRUMB_LEN, "%u ", Port_FrameCounter());
+    va_start(ap, fmt);
+    vsnprintf(line + n, CRUMB_LEN - n, fmt, ap);
+    va_end(ap);
+    sCrumbNext++;
+    sCrumbTotal++;
+}
+
+/* The crumbs, oldest first, as text. */
+int Port_CrumbText(char *buf, int size)
+{
+    unsigned i, from = sCrumbTotal > CRUMB_COUNT ? sCrumbNext - CRUMB_COUNT : 0;
+    int n = 0;
+    for (i = from; i < sCrumbNext && n < size - 1; i++)
+        n += snprintf(buf + n, size - n, "%s\n", sCrumbs[i % CRUMB_COUNT]);
+    return n;
+}
 
 /* ------------------------------------------------------ quick save/load */
 

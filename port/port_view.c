@@ -33,6 +33,7 @@
 
 #include "port/port.h"
 #include "port/port_view.h"
+#include "port/port_game.h"
 #include "port/ppu/include/cpu/mode1.h"
 
 #include "global.h"
@@ -82,6 +83,8 @@ static short sSlotX[128], sSlotY[128];
 
 void Port_ViewSceneFrame(int scene)
 {
+    if (scene != sScene)
+        Port_Crumb("scene %d", scene);
     sScene = scene;
     sSceneFrame = Port_FrameCounter();
 }

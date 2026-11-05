@@ -87,3 +87,19 @@ zur nächsten Zeile gedrückt. Umgebungsvariablen: `PMD_SHOT=f1,f2` (PPM-Bilder)
 `PMD_CHEATS=1`, `PMD_30FPS=1`, `PMD_TIMING=1`, `PMD_VIEW_DUMP=frame`,
 `PMD_AUDIO_DEBUG=1`. `settings.ini`, `quicksave.bin` und `romindex.txt`
 liegen im Ausgabeordner.
+
+## Testdaten mit einem Befehl holen (Pi)
+
+`platform/vita/tools/vita.sh` liegt auch im Daten-Repo. Einmalig: `sudo apt install lftp`,
+`vita.conf` mit `VITA=<IP der Vita>` anlegen (VitaShell → SELECT startet den FTP-Server und
+zeigt die Adresse). Danach nach jedem Test:
+
+```sh
+cd ~/pmd-vita-data && git pull && ./vita.sh fetch run3
+```
+
+holt `log.txt`, `log_prev.txt`, `crumbs.txt`, `settings.ini`, die Schnellspeicherung, alle
+Core-Dumps und alle Screenshots nach `runs/run3/`, löscht Screenshots und Dumps auf der Vita
+und pusht alles. `./vita.sh vpk <datei.vpk>` kopiert eine neue VPK nach `ux0:data/pmd/`
+(dann in VitaShell installieren). `crumbs.txt` enthält die letzten Aktionen des Spiels vor
+einem Absturz.
