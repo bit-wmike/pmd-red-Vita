@@ -198,7 +198,7 @@ static void ReadScript(const char *path)
         fprintf(stderr, "host: cannot read script %s\n", path);
         return;
     }
-    while (fgets(line, sizeof(line), f) && sInputCount < 1024) {
+    while (fgets(line, sizeof(line), f) && sInputCount < 8192) {
         int frame;
         unsigned keys;
         if (sscanf(line, "%d %x", &frame, &keys) == 2) {

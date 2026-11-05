@@ -90,6 +90,8 @@ unten=80, R=100, L=200; Tasten bleiben bis zur nächsten Zeile gedrückt).
 Schalter: `PMD_SHOT=f1,f2` / `PMD_SHOT_EVERY=n` (PPM), `PMD_VIEW=0/1/2`, `PMD_WAV=1`,
 `PMD_QSAVE_AT`/`PMD_QLOAD_AT`, `PMD_CHEATS=1`, `PMD_30FPS=1`, `PMD_TIMING=1`,
 `PMD_VIEW_DUMP=frame` (OAM/Ansicht), `PMD_AUDIO_DEBUG=1`.
+- `platform/host/scripts/intro_to_dungeon.txt`: Neues Spiel bis in Kleinhain B1F (Partner Bisasam, Dungeon
+  ab Bild ~8975, 14000 Bilder; B gehalten überspringt Text). Pflichtlauf vor jeder Version (Dungeon-Start).
 - Ohne echte ROM: `python3 tools/port/fake_rom.py build/fake.gba` (nach einem Build) – das
   Spiel läuft damit bis in die Spielwelt (Intro-Skript, Basis), Musik ab ~Frame 968;
   `baserom.gba`-Teile (u. a. PCM-Samples) sind darin Nullen.
@@ -97,7 +99,7 @@ Schalter: `PMD_SHOT=f1,f2` / `PMD_SHOT_EVERY=n` (PPM), `PMD_VIEW=0/1/2`, `PMD_WA
   PPMs** (`cmp`); (2) Renderer-Änderungen Bild für Bild gegen die alte Version vergleichen;
   (3) Vita-Build ohne Fehler.
 
-## Stand (0.1.14, 05.11.2026)
+## Stand (0.1.15, 05.11.2026)
 - 0.1.12 (Mikes `run4`, 0.1.11: Absturz vor dem ersten Dungeon, Titel/Gesundheitshinweis englisch bzw.
   „fehlerhaft“, Tastatur-Müll bei der Namensgebung, Traumtext nicht zentriert): (1) **Absturz**: `lvmp001`
   (Levelkurve, AT-gepackt, 616-Byte-Block mit SIRO-Kopf) wird aus der EU-ROM genommen; `Port_ChooseFile`
@@ -121,6 +123,26 @@ Schalter: `PMD_SHOT=f1,f2` / `PMD_SHOT_EVERY=n` (PPM), `PMD_VIEW=0/1/2`, `PMD_WA
   UI-Ebene (BG0 mit eigenem dx) – Rücksprache mit Mike. `UniformMap` (einfarbige Karten → Bild mittig) ist
   drin, greift hier aber nicht (Karte hat echte Kacheln).
   (6) `vita.sh fetch` holt jetzt auch `pmd_red.sav`.
+- 0.1.15 (Mikes `run5`, 0.1.14: Freeze beim ersten Dungeon weiterhin, Traumtext/Dialogboxen links, Weltkarte
+  im Intro nur GBA-groß): (1) **Freeze gelöst und auf dem Host reproduziert** (Skript
+  `scratchpad/dungeon_b.txt`: Partner **Bisasam** → `lvmp001`; 0.1.14-Host stürzt mit Signal 11 beim
+  Dungeon-Start, neu läuft durch). Ursache: `Port_ChooseFile` prüfte „ist SIRO?“ an der Port-Kopie, die bei
+  einem nicht gefundenen Block **Nullen** enthält → Schwelle 0 → ganze gepackte Datei nach Aussehen
+  „zeigerübersetzt“ (5 Wörter). Jetzt: ROM-Datei mit SIRO + AT4PX/AT4PN/ATUPX/PKDPX → nie übersetzen
+  (`Port_IsCompressedMagic`); außerdem lässt `Relocate` die 336 Pseudo-Relocations in 40 gepackten
+  system_sbin-Dateien aus (`InCompressedContent`; betrifft die US-ROM, bei der die Blöcke gefunden werden).
+  Der Host-Skriptleser liest jetzt 8192 Zeilen (vorher 1024 – längere Skripte drückten ab Zeile 1024 nichts
+  mehr; „Hänger“ in Dialogen waren nur wartende Textboxen). Skripttrick: B dauerhaft halten lässt alle
+  Textboxen durchlaufen, A-Flanken alle 60 Bilder beantworten Menüs; Tastatur: Start springt auf END.
+  (2) **UI-Ebenen mittig**: BG0/BG1 und Bildschirm-UI-Sprites (alles über `AddSprite`, außer Schatten,
+  Fallen, Boden-Marker, die `gPortSpriteWorld` setzen) liegen immer am GBA-Rechteck in der Bildmitte
+  (`sUiDx/sUiDy`, `sSlotUi[]`); die Welt (BG2/3, `AddAxSprite`-Sprites, WIN/HDMA) folgt der Kamera wie
+  bisher. Traumtexte, Dialogboxen und Portraits sind damit mittig, auch wenn die Kamera am Kartenrand steht.
+  (3) Dungeon-Sichtweite: `ShouldDisplayEntity` und `trap.c` nutzen `gPortViewMargin*` (Monster/Items/Fallen
+  im ganzen Weitsicht-Bereich; wirkt auch auf Animationslogik sichtbarer Entities).
+  (4) Intro-Weltkarte = Bodenkarte **S03** (288×312, Kamera schwenkt vertikal): mit der Bildregel 288 px
+  breit. Menühintergrund (schwarz mit Funkeln) ist GBA-echt. `PMD_VIEW_LOG=1` (Host) loggt Ansichtswechsel.
+  Offen: Dungeon-Titel „Tiny Woods B1F“ englisch (Banner).
 - 0.1.14 (zwei Agenten): (1) **Startzeit-Caches**: `romindex.txt` hat Kopf `pmdidx 2 <TableHash> <ROM-SHA-1>`
   (FNV-64 über die Blocktabelle statt Versionsnummer → neue Version ohne Datenänderung nutzt den Cache);
   nicht gefundene Blöcke stehen als `name -` drin (`absent`, sonst 5 Scan-Pässe pro Start für 765 Blöcke).
@@ -300,8 +322,7 @@ Schalter: `PMD_SHOT=f1,f2` / `PMD_SHOT_EVERY=n` (PPM), `PMD_VIEW=0/1/2`, `PMD_WA
 2. Weltkarte/Freundesareal-Karte sind in der Weitsicht (480×320-Bild), aber ungetestet
    (die Intro-Weltkarte ist eine Bodenkarte, Szene 2, 240 px breit sichtbar); Menüfenster prüfen.
    Deutscher Spieltext aus der EU-ROM (Stringtabellen der EU-Sprachen finden) nur nach Rücksprache.
-3. Dungeon: `ShouldDisplayEntity` (±32 px) gilt auch für Logik – Monster/Items in den Rändern
-   jenseits davon werden nicht gezeichnet; evtl. reine Render-Kopie einführen.
+3. ~~Dungeon: `ShouldDisplayEntity` (±32 px)~~ seit 0.1.15 um die Weitsicht-Ränder erweitert (auch für Logik).
 4. Leistung: Mikes Log (0.1.7) zeigt in der Weitsicht 17–18 ms Arbeit pro Bild (Render ~14 ms),
    also knapp unter 60 FPS mit steigendem `catchup`. Renderer-Profil wie beim TMC-Port (Kachelpfade,
    Compositor) oder standardmäßig 30 FPS für die Weitsicht erwägen.

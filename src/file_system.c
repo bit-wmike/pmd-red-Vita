@@ -57,9 +57,13 @@ static const File *Port_ChooseFile(const File *file, s32 cursor)
     /* compressed content holds no pointers, whatever the decomp's copy
      * says (its `.4byte` words inside the stream are artefacts) */
     if (rom[0] == 'S' && rom[1] == 'I' && rom[2] == 'R' && rom[3] == 'O' && Port_IsCompressedMagic(rom + 16)) {
-        holes = 1;
+        holes = 0; /* the port's copy of an unfound block is zeros: no SIRO there */
         contentHoles = 0;
     }
+#ifndef __vita__
+    if (getenv("PMD_FILE_DEBUG"))
+        Platform_Log("file: %s: rom %02x%02x%02x%02x +16 %02x%02x%02x%02x holes %u/%u\n", file->name, rom[0], rom[1], rom[2], rom[3], rom[16], rom[17], rom[18], rom[19], holes, contentHoles);
+#endif
     /* pointers inside (charmaps, parameter tables; the port's copy tells
      * whether the file has any): translated by their look, as the GBA
      * format keeps absolute ROM addresses. A SIRO header alone counts as
