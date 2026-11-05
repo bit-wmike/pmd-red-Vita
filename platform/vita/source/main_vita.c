@@ -495,21 +495,48 @@ static void ChooseLanguage(void)
     Platform_Log("[ui] language chosen: %d\n", sel);
 }
 
-enum { MI_VIEW, MI_STYLE, MI_FRAME, MI_FPS, MI_LANG, MI_SQUARE, MI_TRIANGLE, MI_RSTICK, MI_TURBO, MI_QSAVE, MI_QLOAD,
-       MI_CH_EXP, MI_CH_HUNGER, MI_BACK, MI_COUNT };
+/* The port menu: sections with a heading, scrolled when longer than the
+ * screen. The view is always the Full View (424x240); only the display
+ * style can be chosen. */
+enum {
+    MI_H_DISPLAY, MI_STYLE, MI_FRAME, MI_FPS, MI_LANG,
+    MI_H_CONTROLS, MI_SQUARE, MI_TRIANGLE, MI_RSTICK, MI_TURBO,
+    MI_H_COMFORT, MI_TEXT_INSTANT, MI_TEXT_AUTO, MI_DSPEED, MI_WALK, MI_AUTOSAVE, MI_HPBARS, MI_CLOCK,
+    MI_H_SAVE, MI_QSAVE, MI_QLOAD,
+    MI_H_CHEATS, MI_CH_EXP, MI_CH_MONEY, MI_CH_IQ, MI_CH_RECRUIT, MI_CH_STAIRS, MI_CH_HUNGER,
+    MI_CH_ATK, MI_CH_DEF, MI_CH_SPATK, MI_CH_SPDEF, MI_CH_SPEED,
+    MI_BACK, MI_COUNT
+};
+#define MENU_ROWS 13 /* items drawn at once */
+
+static int IsHeading(int item)
+{
+    return item == MI_H_DISPLAY || item == MI_H_CONTROLS || item == MI_H_COMFORT || item == MI_H_SAVE || item == MI_H_CHEATS;
+}
 
 static const char *OnOff(int v)
 {
     return v ? "an" : "aus";
 }
 
+static const char *Stat(int v)
+{
+    static char buf[16];
+    if (v == 0)
+        return "normal";
+    snprintf(buf, sizeof(buf), "%+d0 %%", v);
+    return buf;
+}
+
 static void MenuLine(int item, char *buf, size_t size)
 {
-    static const char *views[] = {"GBA (240x160)", "Breitbild (282x160)", "Weitsicht (424x240)"};
     static const char *styles[] = {"Weich", "Scharf", "Pixelgenau"};
     static const char *frames[] = {"Aus (schwarz)", "Artwork (LiveArea-Bild, abgedunkelt)", "Bezel (Rahmengrafik)"};
+    static const char *speeds[] = {"normal", "x1,5", "x2"};
+    static const char *bars[] = {"aus", "nur Bosse", "alle Gegner"};
+    static const char *recruit[] = {"normal", "+20 %", "+50 %"};
     switch (item) {
-        case MI_VIEW: snprintf(buf, size, "Ansicht: %s", views[gPortConfig.viewMode]); break;
+        case MI_H_DISPLAY: snprintf(buf, size, "-- Bild (Ansicht immer Weitsicht 424x240) --"); break;
         case MI_STYLE: snprintf(buf, size, "Bilddarstellung: %s", styles[gPortConfig.displayStyle]); break;
         case MI_FRAME: snprintf(buf, size, "Rahmen um das Spielbild: %s", frames[gPortConfig.frame]); break;
         case MI_FPS: snprintf(buf, size, "Bildrate: %s", gPortConfig.frameRate30 ? "30 (Spieltempo bleibt)" : "60"); break;
@@ -519,14 +546,34 @@ static void MenuLine(int item, char *buf, size_t size)
             else
                 snprintf(buf, size, "Sprache: Englisch (die ROM hat nur eine Sprache)");
             break;
+        case MI_H_CONTROLS: snprintf(buf, size, "-- Steuerung --"); break;
         case MI_SQUARE: snprintf(buf, size, "Viereck: %s", gPortConfig.squareThrow ? "Gegenstand werfen (L+R)" : "B"); break;
         case MI_TRIANGLE: snprintf(buf, size, "Dreieck: %s", gPortConfig.triangleMove ? "Attacke einsetzen (L+A)" : "B"); break;
         case MI_RSTICK: snprintf(buf, size, "Rechter Stick = diagonal gehen (R+Richtung): %s", OnOff(gPortConfig.rightStickDiag)); break;
         case MI_TURBO: snprintf(buf, size, "Touchscreen halten = Schnellvorlauf: %s", OnOff(gPortConfig.turbo)); break;
+        case MI_H_COMFORT: snprintf(buf, size, "-- Komfort --"); break;
+        case MI_TEXT_INSTANT: snprintf(buf, size, "Text sofort komplett anzeigen: %s", OnOff(gPortConfig.textInstant)); break;
+        case MI_TEXT_AUTO: snprintf(buf, size, "A halten blaettert Text weiter: %s", OnOff(gPortConfig.textAuto)); break;
+        case MI_DSPEED: snprintf(buf, size, "Dungeon-Tempo (Bewegung, Gegnerzuege): %s", speeds[gPortConfig.dungeonSpeed]); break;
+        case MI_WALK: snprintf(buf, size, "Schneller laufen in Basis und Stadt: %s", OnOff(gPortConfig.walkFast)); break;
+        case MI_AUTOSAVE: snprintf(buf, size, "Schnellspeichern bei jedem Etagenwechsel: %s", OnOff(gPortConfig.floorAutosave)); break;
+        case MI_HPBARS: snprintf(buf, size, "HP-Balken ueber Gegnern: %s", bars[gPortConfig.hpBars]); break;
+        case MI_CLOCK: snprintf(buf, size, "Uhrzeit und Spielzeit im Rand: %s", OnOff(gPortConfig.clockOverlay)); break;
+        case MI_H_SAVE: snprintf(buf, size, "-- Schnellspeicher --"); break;
         case MI_QSAVE: snprintf(buf, size, "Schnellspeichern"); break;
         case MI_QLOAD: snprintf(buf, size, "Schnellladen"); break;
+        case MI_H_CHEATS: snprintf(buf, size, "-- Sanfte Cheats --"); break;
         case MI_CH_EXP: snprintf(buf, size, "Erfahrung x%d", gPortConfig.expMultiplier); break;
+        case MI_CH_MONEY: snprintf(buf, size, "Geld x%d", gPortConfig.moneyMult); break;
+        case MI_CH_IQ: snprintf(buf, size, "IQ x%d", gPortConfig.iqMult); break;
+        case MI_CH_RECRUIT: snprintf(buf, size, "Rekrutierungschance: %s", recruit[gPortConfig.recruitBoost]); break;
+        case MI_CH_STAIRS: snprintf(buf, size, "Treppe auf der Karte markiert: %s", OnOff(gPortConfig.stairsMarker)); break;
         case MI_CH_HUNGER: snprintf(buf, size, "Kein Hunger (Bauch sinkt nicht): %s", OnOff(gPortConfig.noHunger)); break;
+        case MI_CH_ATK: snprintf(buf, size, "Team-Angriff: %s", Stat(gPortConfig.statAtk)); break;
+        case MI_CH_DEF: snprintf(buf, size, "Team-Verteidigung: %s", Stat(gPortConfig.statDef)); break;
+        case MI_CH_SPATK: snprintf(buf, size, "Team-Spezial-Angriff: %s", Stat(gPortConfig.statSpAtk)); break;
+        case MI_CH_SPDEF: snprintf(buf, size, "Team-Spezial-Verteidigung: %s", Stat(gPortConfig.statSpDef)); break;
+        case MI_CH_SPEED: snprintf(buf, size, "Team-Initiative: %s", Stat(gPortConfig.statSpeed)); break;
         default: snprintf(buf, size, "Zurueck zum Spiel"); break;
     }
 }
@@ -536,24 +583,46 @@ static int Wrap(int v, int d, int n)
     return (v + d + n) % n;
 }
 
+static int Clamp(int v, int d, int lo, int hi)
+{
+    v += d;
+    return v < lo ? lo : v > hi ? hi : v;
+}
+
 /* Changes an item; returns 1 when the menu should close. */
 static int MenuChange(int item, int d)
 {
+    int step = d == 0 ? 1 : d; /* X on a value: next */
     switch (item) {
-        case MI_VIEW: gPortConfig.viewMode = Wrap(gPortConfig.viewMode, d, 3); break;
         case MI_LANG:
             if (Port_TextMultilingual())
-                gPortConfig.language = Wrap(gPortConfig.language < 0 ? 0 : gPortConfig.language, d, PORT_LANG_COUNT);
+                gPortConfig.language = Wrap(gPortConfig.language < 0 ? 0 : gPortConfig.language, step, PORT_LANG_COUNT);
             break;
-        case MI_STYLE: gPortConfig.displayStyle = Wrap(gPortConfig.displayStyle, d, 3); break;
-        case MI_FRAME: gPortConfig.frame = Wrap(gPortConfig.frame, d, 3); break;
+        case MI_STYLE: gPortConfig.displayStyle = Wrap(gPortConfig.displayStyle, step, 3); break;
+        case MI_FRAME: gPortConfig.frame = Wrap(gPortConfig.frame, step, 3); break;
         case MI_FPS: gPortConfig.frameRate30 ^= 1; break;
         case MI_SQUARE: gPortConfig.squareThrow ^= 1; break;
         case MI_TRIANGLE: gPortConfig.triangleMove ^= 1; break;
         case MI_RSTICK: gPortConfig.rightStickDiag ^= 1; break;
         case MI_TURBO: gPortConfig.turbo ^= 1; break;
-        case MI_CH_EXP: gPortConfig.expMultiplier = 1 + Wrap(gPortConfig.expMultiplier - 1, d == 0 ? 1 : d, 4); break;
+        case MI_TEXT_INSTANT: gPortConfig.textInstant ^= 1; break;
+        case MI_TEXT_AUTO: gPortConfig.textAuto ^= 1; break;
+        case MI_DSPEED: gPortConfig.dungeonSpeed = Wrap(gPortConfig.dungeonSpeed, step, 3); break;
+        case MI_WALK: gPortConfig.walkFast ^= 1; break;
+        case MI_AUTOSAVE: gPortConfig.floorAutosave ^= 1; break;
+        case MI_HPBARS: gPortConfig.hpBars = Wrap(gPortConfig.hpBars, step, 3); break;
+        case MI_CLOCK: gPortConfig.clockOverlay ^= 1; break;
+        case MI_CH_EXP: gPortConfig.expMultiplier = 1 + Wrap(gPortConfig.expMultiplier - 1, step, 4); break;
+        case MI_CH_MONEY: gPortConfig.moneyMult = 1 + Wrap(gPortConfig.moneyMult - 1, step, 4); break;
+        case MI_CH_IQ: gPortConfig.iqMult = 1 + Wrap(gPortConfig.iqMult - 1, step, 4); break;
+        case MI_CH_RECRUIT: gPortConfig.recruitBoost = Wrap(gPortConfig.recruitBoost, step, 3); break;
+        case MI_CH_STAIRS: gPortConfig.stairsMarker ^= 1; break;
         case MI_CH_HUNGER: gPortConfig.noHunger ^= 1; break;
+        case MI_CH_ATK: gPortConfig.statAtk = Clamp(gPortConfig.statAtk, step, -3, 3); break;
+        case MI_CH_DEF: gPortConfig.statDef = Clamp(gPortConfig.statDef, step, -3, 3); break;
+        case MI_CH_SPATK: gPortConfig.statSpAtk = Clamp(gPortConfig.statSpAtk, step, -3, 3); break;
+        case MI_CH_SPDEF: gPortConfig.statSpDef = Clamp(gPortConfig.statSpDef, step, -3, 3); break;
+        case MI_CH_SPEED: gPortConfig.statSpeed = Clamp(gPortConfig.statSpeed, step, -3, 3); break;
         case MI_QSAVE:
             if (d == 0) { Port_RequestQuickSave(); return 1; }
             break;
@@ -567,9 +636,17 @@ static int MenuChange(int item, int d)
     return 0;
 }
 
+static int NextItem(int sel, int d)
+{
+    do {
+        sel = Wrap(sel, d, MI_COUNT);
+    } while (IsHeading(sel));
+    return sel;
+}
+
 static void RunMenu(void)
 {
-    static int sel;
+    static int sel = MI_STYLE, top;
     unsigned prev = ~0u;
     char line[160];
 
@@ -582,25 +659,41 @@ static void RunMenu(void)
         sceCtrlPeekBufferPositive(0, &pad, 1);
         pressed = pad.buttons & ~prev;
         prev = pad.buttons;
-        if (pressed & SCE_CTRL_UP) sel = Wrap(sel, -1, MI_COUNT);
-        if (pressed & SCE_CTRL_DOWN) sel = Wrap(sel, 1, MI_COUNT);
+        if (pressed & SCE_CTRL_UP) sel = NextItem(sel, -1);
+        if (pressed & SCE_CTRL_DOWN) sel = NextItem(sel, 1);
         if (pressed & SCE_CTRL_LEFT) close = MenuChange(sel, -1);
         if (pressed & SCE_CTRL_RIGHT) close = MenuChange(sel, 1);
         if (pressed & SCE_CTRL_CROSS) close = MenuChange(sel, 0) || close;
         if (pressed & (SCE_CTRL_CIRCLE | SCE_CTRL_START))
             close = 1;
+        /* keep the selection (and its heading) on screen */
+        if (sel < top + 1)
+            top = sel > 0 && IsHeading(sel - 1) ? sel - 1 : sel;
+        if (sel >= top + MENU_ROWS)
+            top = sel - MENU_ROWS + 1;
+        if (top > MI_COUNT - MENU_ROWS)
+            top = MI_COUNT - MENU_ROWS;
+        if (top < 0)
+            top = 0;
 
         vita2d_pool_reset();
         DrawGame();
         vita2d_draw_rectangle(0, 0, 960, 544, RGBA8(0, 0, 0, 190));
         vita2d_pgf_draw_text(sFont, 60, 50, RGBA8(255, 200, 80, 255), 1.3f,
                              "Pokemon Mystery Dungeon: Red Rescue Team - Vita " PMD_PORT_VERSION);
-        for (i = 0; i < MI_COUNT; i++) {
-            MenuLine(i, line, sizeof(line));
-            vita2d_pgf_draw_text(sFont, 80, 100 + i * 30, i == sel ? RGBA8(255, 230, 80, 255) : RGBA8(220, 220, 220, 255),
+        for (i = 0; i < MENU_ROWS && top + i < MI_COUNT; i++) {
+            int item = top + i;
+            MenuLine(item, line, sizeof(line));
+            vita2d_pgf_draw_text(sFont, IsHeading(item) ? 64 : 80, 92 + i * 31,
+                                 item == sel ? RGBA8(255, 230, 80, 255) : IsHeading(item) ? RGBA8(140, 190, 255, 255) : RGBA8(220, 220, 220, 255),
                                  1.0f, line);
+            if (item == sel)
+                vita2d_pgf_draw_text(sFont, 60, 92 + i * 31, RGBA8(255, 230, 80, 255), 1.0f, ">");
         }
-        vita2d_pgf_draw_text(sFont, 60, 100 + sel * 30, RGBA8(255, 230, 80, 255), 1.0f, ">");
+        if (top > 0)
+            vita2d_pgf_draw_text(sFont, 900, 92, RGBA8(150, 150, 150, 255), 1.0f, "^");
+        if (top + MENU_ROWS < MI_COUNT)
+            vita2d_pgf_draw_text(sFont, 900, 92 + (MENU_ROWS - 1) * 31, RGBA8(150, 150, 150, 255), 1.0f, "v");
         vita2d_pgf_draw_text(sFont, 60, 525, RGBA8(150, 150, 150, 255), 0.85f,
                              "Steuerkreuz: waehlen/aendern   X: ausfuehren   O/START: zurueck");
         vita2d_end_drawing();
@@ -887,6 +980,7 @@ int main(int argc, char **argv)
 
     AudioInit();
     Port_Init(); /* loads settings.ini */
+    gPortConfig.viewMode = gPortViewMode = PORT_VIEW_FULL; /* the Vita port always shows the Full View */
     Platform_Log("settings: view=%d style=%d frame=%d fps30=%d turbo=%d\n", gPortConfig.viewMode,
                  gPortConfig.displayStyle, gPortConfig.frame, gPortConfig.frameRate30, gPortConfig.turbo);
     if (Port_TextMultilingual() && gPortConfig.language < 0)

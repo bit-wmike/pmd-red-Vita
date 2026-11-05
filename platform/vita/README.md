@@ -47,13 +47,24 @@ Start aus deiner ROM.
 
 ## Menü (START + SELECT)
 
-Ansicht (GBA, Breitbild, Weitsicht), Bilddarstellung (Weich, Scharf,
-Pixelgenau), Rahmen um das Spielbild (siehe unten), Bildrate 60/30, Sprache (nur EU-ROM),
-Tastenbelegung (Viereck, Dreieck, rechter Stick,
-Schnellvorlauf), Schnellspeichern / -laden und zwei sanfte Cheats:
-**Erfahrung ×1–×4** und **kein Hunger** (der Bauch sinkt nicht). Beide ändern
-nur das Tempo des Spiels, nichts an der Mechanik. Die Einstellungen landen in
+Das Menü ist in Abschnitte geteilt und scrollt. Alle Komfortfunktionen und
+Cheats sind einzeln ein- und ausschaltbar; die Einstellungen landen in
 `settings.ini`. Die Versionsnummer steht oben im Menü und im LiveArea.
+
+- **Bild:** Bilddarstellung (Weich, Scharf, Pixelgenau), Rahmen um das
+  Spielbild (siehe unten), Bildrate 60/30, Sprache (nur EU-ROM). Die Ansicht
+  ist immer die Weitsicht (424×240).
+- **Steuerung:** Viereck, Dreieck, rechter Stick, Schnellvorlauf per Touchscreen.
+- **Komfort:** Text sofort komplett anzeigen; A halten blättert Text weiter;
+  Dungeon-Tempo ×1,5/×2 (Bewegungen und Gegnerzüge, Musik unverändert);
+  schneller laufen in Basis und Stadt; Schnellspeichern bei jedem
+  Etagenwechsel; HP-Balken über Gegnern (aus, nur Bosse, alle); Uhrzeit und
+  Spielzeit im Rand.
+- **Schnellspeicher:** Schnellspeichern / Schnellladen (nur in derselben Szene sicher).
+- **Sanfte Cheats:** Erfahrung ×1–4, Geld ×1–4, IQ ×1–4, Rekrutierungschance
+  +20 %/+50 %, Treppe auf der Karte markiert, kein Hunger, und die
+  Team-Werte Angriff, Verteidigung, Spezial-Angriff, Spezial-Verteidigung,
+  Initiative je −30 % bis +30 % (nur für das eigene Team).
 
 Die **Weitsicht** (424×240) ist immer an: die Bildgröße und der Zoom ändern
 sich nie. In Dungeons, in den Orten (Platz, Basis, Zwischensequenzen), auf der
@@ -63,7 +74,7 @@ Texte, HUD und Menüs bleiben an ihrem Platz. Auf allen anderen Bildschirmen
 bleiben schwarz.
 
 **Rahmen um das Spielbild:** Füllt das Spielbild den Bildschirm nicht ganz
-(Bilddarstellung „Pixelgenau“, Ansicht „GBA“), zeigt der Port um das Bild
+(Bilddarstellung „Pixelgenau“), zeigt der Port um das Bild
 herum statt Schwarz wahlweise das **Artwork** (das LiveArea-Hintergrundbild
 der VPK, abgedunkelt; Standard), einen **Bezel** (dunkle Rahmengrafik mit
 Lichtkante um das Bild, `settings.ini`-Schlüssel `frame`: 0 = aus, 1 = Artwork,
