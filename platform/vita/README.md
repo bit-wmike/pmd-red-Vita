@@ -48,7 +48,8 @@ Start aus deiner ROM.
 ## Menü (START + SELECT)
 
 Ansicht (GBA, Breitbild, Weitsicht), Bilddarstellung (Weich, Scharf,
-Pixelgenau), Bildrate 60/30, Sprache (nur EU-ROM), Tastenbelegung (Viereck, Dreieck, rechter Stick,
+Pixelgenau), Rahmen um das Spielbild (siehe unten), Bildrate 60/30, Sprache (nur EU-ROM),
+Tastenbelegung (Viereck, Dreieck, rechter Stick,
 Schnellvorlauf), Schnellspeichern / -laden und zwei sanfte Cheats:
 **Erfahrung ×1–×4** und **kein Hunger** (der Bauch sinkt nicht). Beide ändern
 nur das Tempo des Spiels, nichts an der Mechanik. Die Einstellungen landen in
@@ -60,6 +61,14 @@ Weltkarte und der Freundesareal-Karte zeigen die Ränder mehr von der Karte;
 Texte, HUD und Menüs bleiben an ihrem Platz. Auf allen anderen Bildschirmen
 (Titel, Vollbildmenüs, feste Bilder) sitzt das GBA-Bild mittig, die Ränder
 bleiben schwarz.
+
+**Rahmen um das Spielbild:** Füllt das Spielbild den Bildschirm nicht ganz
+(Bilddarstellung „Pixelgenau“, Ansicht „GBA“), zeigt der Port um das Bild
+herum statt Schwarz wahlweise das **Artwork** (das LiveArea-Hintergrundbild
+der VPK, abgedunkelt; Standard), einen **Bezel** (dunkle Rahmengrafik mit
+Lichtkante um das Bild, `settings.ini`-Schlüssel `frame`: 0 = aus, 1 = Artwork,
+2 = Bezel) oder nichts. Das Spielbild selbst bleibt unverändert; füllt es den
+Bildschirm, ist vom Rahmen nichts zu sehen.
 
 Schnellspeichern geht nur im laufenden Spiel (Dungeon oder Ort). Eine
 Schnellspeicherung gehört zu genau einer Version des Ports; nach einem

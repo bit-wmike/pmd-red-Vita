@@ -3,8 +3,10 @@
  *
  * Video: vita2d, the frame scaled to the full screen height; styles smooth,
  *        sharp (integer pre-scale, then smooth down-scale) and pixel (integer).
- * Menu:  START + SELECT (view, display, frame rate, controls, quick save,
- *        cheats), saved to settings.ini.
+ *        Around a game image with borders (pixel style, GBA view) either the
+ *        darkened LiveArea background or a bezel graphic is drawn ("Rahmen").
+ * Menu:  START + SELECT (view, display, frame, frame rate, controls, quick
+ *        save, cheats), saved to settings.ini.
  * Audio: a thread feeding sceAudioOut from a ring buffer (48 kHz stereo).
  * Input: buttons and left stick mapped to the GBA keys.
  * Files: ux0:data/pmd/ - the ROM (any *.gba of the US version), the save
@@ -83,8 +85,61 @@ void Platform_Log(const char *fmt, ...)
 static vita2d_texture *sTex;
 static vita2d_texture *sSharp;
 static vita2d_pgf *sFont;
+/* The frame around a game image with borders: the LiveArea background of
+ * the VPK (drawn darkened) and the 9-slice bezel (platform/vita/assets/
+ * bezel.png, made by tools/make_bezel.py). The VPK build converts both to
+ * raw RGBA files (tools/png2raw.py: the SDK's vita2d has no PNG loader).
+ * Either may be NULL when its file is missing. */
+static vita2d_texture *sArtwork;
+static vita2d_texture *sBezel;
 
 #define SHARP_K 3
+
+#define ARTWORK_PATH "app0:assets/bg.raw"
+#define BEZEL_PATH "app0:assets/bezel.raw"
+#define ARTWORK_TINT RGBA8(100, 100, 100, 255) /* ~40 % brightness */
+#define BEZEL_BORDER 48  /* width of the bezel ring (corner size in bezel.png) */
+#define BEZEL_CENTER 16  /* the opening in the middle of bezel.png */
+#define BEZEL_SHELL RGBA8(40, 41, 46, 255) /* the flat colour the ring fades into */
+
+/* Loads a raw RGBA texture written by png2raw.py ('PRAW', u32 w, u32 h,
+ * then R,G,B,A bytes per pixel) straight into a vita2d texture. */
+static vita2d_texture *LoadRawTexture(const char *path)
+{
+    unsigned char head[12];
+    unsigned w, h, y;
+    vita2d_texture *tex;
+    unsigned char *dst;
+    FILE *f = fopen(path, "rb");
+    if (!f) {
+        Platform_Log("video: %s not found\n", path);
+        return NULL;
+    }
+    if (fread(head, 1, sizeof(head), f) != sizeof(head) || memcmp(head, "PRAW", 4) != 0) {
+        Platform_Log("video: %s is not a raw texture\n", path);
+        fclose(f);
+        return NULL;
+    }
+    w = head[4] | head[5] << 8 | head[6] << 16 | (unsigned)head[7] << 24;
+    h = head[8] | head[9] << 8 | head[10] << 16 | (unsigned)head[11] << 24;
+    if (w == 0 || h == 0 || w > 2048 || h > 2048 ||
+        !(tex = vita2d_create_empty_texture_format(w, h, SCE_GXM_TEXTURE_FORMAT_U8U8U8U8_ABGR))) {
+        Platform_Log("video: %s: bad size %ux%u\n", path, w, h);
+        fclose(f);
+        return NULL;
+    }
+    dst = (unsigned char *)vita2d_texture_get_datap(tex);
+    for (y = 0; y < h; y++) {
+        if (fread(dst + y * vita2d_texture_get_stride(tex), 1, (size_t)w * 4, f) != (size_t)w * 4) {
+            Platform_Log("video: %s is truncated\n", path);
+            vita2d_free_texture(tex);
+            fclose(f);
+            return NULL;
+        }
+    }
+    fclose(f);
+    return tex;
+}
 
 static void VideoInit(void)
 {
@@ -95,6 +150,50 @@ static void VideoInit(void)
     sSharp = vita2d_create_empty_texture_rendertarget(PORT_VIEW_MAX_W * SHARP_K, PORT_VIEW_MAX_H * SHARP_K,
                                                        SCE_GXM_TEXTURE_FORMAT_A8B8G8R8);
     sFont = vita2d_load_default_pgf();
+    sArtwork = LoadRawTexture(ARTWORK_PATH);
+    if (sArtwork)
+        vita2d_texture_set_filters(sArtwork, SCE_GXM_TEXTURE_FILTER_LINEAR, SCE_GXM_TEXTURE_FILTER_LINEAR);
+    sBezel = LoadRawTexture(BEZEL_PATH);
+    if (sBezel && (vita2d_texture_get_width(sBezel) != 2 * BEZEL_BORDER + BEZEL_CENTER ||
+                   vita2d_texture_get_height(sBezel) != 2 * BEZEL_BORDER + BEZEL_CENTER)) {
+        Platform_Log("video: bezel.raw has the wrong size %ux%u\n", vita2d_texture_get_width(sBezel),
+                     vita2d_texture_get_height(sBezel));
+        vita2d_free_texture(sBezel);
+        sBezel = NULL;
+    }
+    if (sBezel)
+        vita2d_texture_set_filters(sBezel, SCE_GXM_TEXTURE_FILTER_POINT, SCE_GXM_TEXTURE_FILTER_POINT);
+    Platform_Log("video: artwork %s, bezel %s\n", sArtwork ? "loaded" : "missing (black)", sBezel ? "loaded" : "missing (plain)");
+}
+
+/* Fills the screen around the game rectangle (gx, gy, gw, gh) according to
+ * gPortConfig.frame. Called right after the clear, before the game is drawn;
+ * nothing is drawn over the game image itself. One texture draw for the
+ * artwork, nine for the bezel - no per-pixel work. */
+static void DrawFrame(float gx, float gy, float gw, float gh)
+{
+    if (gw >= 959.0f && gh >= 543.0f)
+        return; /* the game fills the screen */
+    if (gPortConfig.frame == PORT_FRAME_ARTWORK) {
+        if (sArtwork)
+            vita2d_draw_texture_tint_scale(sArtwork, 0, 0, 960.0f / vita2d_texture_get_width(sArtwork),
+                                           544.0f / vita2d_texture_get_height(sArtwork), ARTWORK_TINT);
+    } else if (gPortConfig.frame == PORT_FRAME_BEZEL) {
+        const float b = BEZEL_BORDER, c = BEZEL_CENTER;
+        vita2d_draw_rectangle(0, 0, 960, 544, BEZEL_SHELL);
+        if (!sBezel)
+            return;
+        /* corners at 1:1 ... */
+        vita2d_draw_texture_part(sBezel, gx - b, gy - b, 0, 0, b, b);
+        vita2d_draw_texture_part(sBezel, gx + gw, gy - b, b + c, 0, b, b);
+        vita2d_draw_texture_part(sBezel, gx - b, gy + gh, 0, b + c, b, b);
+        vita2d_draw_texture_part(sBezel, gx + gw, gy + gh, b + c, b + c, b, b);
+        /* ... and the edges stretched along the game rectangle */
+        vita2d_draw_texture_part_scale(sBezel, gx, gy - b, b, 0, c, b, gw / c, 1.0f);
+        vita2d_draw_texture_part_scale(sBezel, gx, gy + gh, b, b + c, c, b, gw / c, 1.0f);
+        vita2d_draw_texture_part_scale(sBezel, gx - b, gy, 0, b, b, c, 1.0f, gh / c);
+        vita2d_draw_texture_part_scale(sBezel, gx + gw, gy, b + c, b, b, c, 1.0f, gh / c);
+    }
 }
 
 static int sCatchup; /* frames computed but not drawn (pacing) */
@@ -201,6 +300,7 @@ static void DrawGame(void)
         vita2d_end_drawing();
         vita2d_start_drawing_advanced(NULL, SCE_GXM_SCENE_VERTEX_WAIT_FOR_DEPENDENCY);
         vita2d_clear_screen();
+        DrawFrame(dx, dy, width * scale, height * scale);
         vita2d_texture_set_filters(sSharp, SCE_GXM_TEXTURE_FILTER_LINEAR, SCE_GXM_TEXTURE_FILTER_LINEAR);
         vita2d_draw_texture_part_scale(sSharp, dx, dy, 0, 0, (float)(width * SHARP_K), (float)(height * SHARP_K),
                                        scale / SHARP_K, scale / SHARP_K);
@@ -209,6 +309,7 @@ static void DrawGame(void)
                                                                                : SCE_GXM_TEXTURE_FILTER_POINT;
         vita2d_start_drawing();
         vita2d_clear_screen();
+        DrawFrame(dx, dy, width * scale, height * scale);
         vita2d_texture_set_filters(sTex, f, f);
         vita2d_draw_texture_part_scale(sTex, dx, dy, 0, 0, (float)width, (float)height, scale, scale);
     }
@@ -394,7 +495,7 @@ static void ChooseLanguage(void)
     Platform_Log("[ui] language chosen: %d\n", sel);
 }
 
-enum { MI_VIEW, MI_STYLE, MI_FPS, MI_LANG, MI_SQUARE, MI_TRIANGLE, MI_RSTICK, MI_TURBO, MI_QSAVE, MI_QLOAD,
+enum { MI_VIEW, MI_STYLE, MI_FRAME, MI_FPS, MI_LANG, MI_SQUARE, MI_TRIANGLE, MI_RSTICK, MI_TURBO, MI_QSAVE, MI_QLOAD,
        MI_CH_EXP, MI_CH_HUNGER, MI_BACK, MI_COUNT };
 
 static const char *OnOff(int v)
@@ -406,9 +507,11 @@ static void MenuLine(int item, char *buf, size_t size)
 {
     static const char *views[] = {"GBA (240x160)", "Breitbild (282x160)", "Weitsicht (424x240)"};
     static const char *styles[] = {"Weich", "Scharf", "Pixelgenau"};
+    static const char *frames[] = {"Aus (schwarz)", "Artwork (LiveArea-Bild, abgedunkelt)", "Bezel (Rahmengrafik)"};
     switch (item) {
         case MI_VIEW: snprintf(buf, size, "Ansicht: %s", views[gPortConfig.viewMode]); break;
         case MI_STYLE: snprintf(buf, size, "Bilddarstellung: %s", styles[gPortConfig.displayStyle]); break;
+        case MI_FRAME: snprintf(buf, size, "Rahmen um das Spielbild: %s", frames[gPortConfig.frame]); break;
         case MI_FPS: snprintf(buf, size, "Bildrate: %s", gPortConfig.frameRate30 ? "30 (Spieltempo bleibt)" : "60"); break;
         case MI_LANG:
             if (Port_TextMultilingual())
@@ -443,6 +546,7 @@ static int MenuChange(int item, int d)
                 gPortConfig.language = Wrap(gPortConfig.language < 0 ? 0 : gPortConfig.language, d, PORT_LANG_COUNT);
             break;
         case MI_STYLE: gPortConfig.displayStyle = Wrap(gPortConfig.displayStyle, d, 3); break;
+        case MI_FRAME: gPortConfig.frame = Wrap(gPortConfig.frame, d, 3); break;
         case MI_FPS: gPortConfig.frameRate30 ^= 1; break;
         case MI_SQUARE: gPortConfig.squareThrow ^= 1; break;
         case MI_TRIANGLE: gPortConfig.triangleMove ^= 1; break;
@@ -507,8 +611,8 @@ static void RunMenu(void)
             break;
     }
     Port_ConfigSave();
-    Platform_Log("[ui] menu closed: view=%d style=%d fps30=%d square=%d triangle=%d rstick=%d turbo=%d exp=x%d hunger=%d\n",
-                 gPortConfig.viewMode, gPortConfig.displayStyle, gPortConfig.frameRate30, gPortConfig.squareThrow,
+    Platform_Log("[ui] menu closed: view=%d style=%d frame=%d fps30=%d square=%d triangle=%d rstick=%d turbo=%d exp=x%d hunger=%d\n",
+                 gPortConfig.viewMode, gPortConfig.displayStyle, gPortConfig.frame, gPortConfig.frameRate30, gPortConfig.squareThrow,
                  gPortConfig.triangleMove, gPortConfig.rightStickDiag, gPortConfig.turbo,
                  gPortConfig.expMultiplier, gPortConfig.noHunger);
     sAnchored = 0; /* the menu stalled the game: re-anchor the pacing */
@@ -783,8 +887,8 @@ int main(int argc, char **argv)
 
     AudioInit();
     Port_Init(); /* loads settings.ini */
-    Platform_Log("settings: view=%d style=%d fps30=%d turbo=%d\n", gPortConfig.viewMode,
-                 gPortConfig.displayStyle, gPortConfig.frameRate30, gPortConfig.turbo);
+    Platform_Log("settings: view=%d style=%d frame=%d fps30=%d turbo=%d\n", gPortConfig.viewMode,
+                 gPortConfig.displayStyle, gPortConfig.frame, gPortConfig.frameRate30, gPortConfig.turbo);
     if (Port_TextMultilingual() && gPortConfig.language < 0)
         ChooseLanguage();
     Platform_Log("settings: language=%d (multilingual ROM: %d)\n", gPortConfig.language, Port_TextMultilingual());

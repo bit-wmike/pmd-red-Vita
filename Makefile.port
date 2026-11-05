@@ -145,18 +145,23 @@ ART = $(if $(wildcard platform/vita/sce_sys_local/$(1)),platform/vita/sce_sys_lo
 
 vpk: $(VPK)
 
-$(VPK): $(OUT) $(call ART,icon0.png) $(call ART,livearea/contents/bg.png) $(call ART,livearea/contents/startup.png) $(SCE)/livearea/contents/template.xml platform/vita/VERSION
+$(VPK): $(OUT) $(call ART,icon0.png) $(call ART,livearea/contents/bg.png) $(call ART,livearea/contents/startup.png) $(SCE)/livearea/contents/template.xml platform/vita/VERSION platform/vita/assets/bezel.png
 	$(VITASDK)/bin/vita-elf-create $(OUT) $(BUILD)/pmd.velf
 	$(VITASDK)/bin/vita-make-fself -s -c $(BUILD)/pmd.velf $(BUILD)/eboot.bin
 	$(VITASDK)/bin/vita-mksfoex -s TITLE_ID=$(TITLE_ID) -s APP_VER=01.00 -d ATTRIBUTE2=12 "$(TITLE) $(VERSION)" $(BUILD)/param.sfo
 	mkdir -p $(BUILD)/livearea
 	$(PYTHON) platform/vita/tools/stamp_version.py $(call ART,livearea/contents/bg.png) $(BUILD)/livearea/bg.png $(VERSION) br
 	$(PYTHON) platform/vita/tools/stamp_version.py $(call ART,livearea/contents/startup.png) $(BUILD)/livearea/startup.png $(VERSION) br
+	mkdir -p $(BUILD)/assets
+	$(PYTHON) platform/vita/tools/png2raw.py $(call ART,livearea/contents/bg.png) $(BUILD)/assets/bg.raw 480x272
+	$(PYTHON) platform/vita/tools/png2raw.py platform/vita/assets/bezel.png $(BUILD)/assets/bezel.raw
 	$(VITASDK)/bin/vita-pack-vpk -s $(BUILD)/param.sfo -b $(BUILD)/eboot.bin \
 	    -a $(call ART,icon0.png)=sce_sys/icon0.png \
 	    -a $(BUILD)/livearea/bg.png=sce_sys/livearea/contents/bg.png \
 	    -a $(BUILD)/livearea/startup.png=sce_sys/livearea/contents/startup.png \
 	    -a $(SCE)/livearea/contents/template.xml=sce_sys/livearea/contents/template.xml \
+	    -a $(BUILD)/assets/bg.raw=assets/bg.raw \
+	    -a $(BUILD)/assets/bezel.raw=assets/bezel.raw \
 	    $@
 	cp $(OUT) $(BUILD)/pmd_vita-$(VERSION).elf
 
