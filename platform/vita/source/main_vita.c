@@ -33,6 +33,7 @@
 #include <sched.h>
 
 #include "port/port.h"
+#include "port/port_text.h"
 #include "port/port_assets.h"
 #include "port/port_view.h"
 #include "port/port_config.h"
@@ -348,7 +349,52 @@ static void AudioInit(void)
 
 /* ---- menu (START + SELECT) ---- */
 
-enum { MI_VIEW, MI_STYLE, MI_FPS, MI_SQUARE, MI_TRIANGLE, MI_RSTICK, MI_TURBO, MI_QSAVE, MI_QLOAD,
+static int Wrap(int v, int d, int n);
+
+static const char *const sLangNames[PORT_LANG_COUNT] = {"Englisch", "Deutsch", "Franzoesisch", "Italienisch", "Spanisch"};
+
+/* First start with a European ROM: the language is asked once; later it is
+ * changed in the port menu only, so that it never gets in the way. */
+static void ChooseLanguage(void)
+{
+    static const char *const names[PORT_LANG_COUNT] = {"English", "Deutsch", "Fran\xc3\xa7ais", "Italiano", "Espa\xc3\xb1ol"};
+    int sel = PORT_LANG_DE;
+    unsigned prev = ~0u;
+    Platform_Log("[ui] language chooser\n");
+    for (;;) {
+        SceCtrlData pad;
+        unsigned pressed;
+        int i, done = 0;
+        sceCtrlPeekBufferPositive(0, &pad, 1);
+        pressed = pad.buttons & ~prev;
+        prev = pad.buttons;
+        if (pressed & SCE_CTRL_UP) sel = Wrap(sel, -1, PORT_LANG_COUNT);
+        if (pressed & SCE_CTRL_DOWN) sel = Wrap(sel, 1, PORT_LANG_COUNT);
+        if (pressed & (SCE_CTRL_CROSS | SCE_CTRL_START)) done = 1;
+        vita2d_pool_reset();
+        vita2d_start_drawing();
+        vita2d_clear_screen();
+        vita2d_pgf_draw_text(sFont, 60, 60, RGBA8(255, 200, 80, 255), 1.3f,
+                             "Pokemon Mystery Dungeon: Red Rescue Team - Vita " PMD_PORT_VERSION);
+        vita2d_pgf_draw_text(sFont, 80, 130, RGBA8(220, 220, 220, 255), 1.0f, "Sprache / Language / Langue / Lingua / Idioma");
+        for (i = 0; i < PORT_LANG_COUNT; i++)
+            vita2d_pgf_draw_text(sFont, 100, 190 + i * 40, i == sel ? RGBA8(255, 230, 80, 255) : RGBA8(200, 200, 200, 255), 1.1f, names[i]);
+        vita2d_pgf_draw_text(sFont, 80, 190 + sel * 40, RGBA8(255, 230, 80, 255), 1.1f, ">");
+        vita2d_pgf_draw_text(sFont, 60, 500, RGBA8(150, 150, 150, 255), 0.85f,
+                             "Spaeter im Port-Menue (START + SELECT) aenderbar  /  can be changed in the port menu later");
+        vita2d_end_drawing();
+        vita2d_wait_rendering_done();
+        vita2d_swap_buffers();
+        sceDisplayWaitVblankStart();
+        if (done)
+            break;
+    }
+    gPortConfig.language = sel;
+    Port_ConfigSave();
+    Platform_Log("[ui] language chosen: %d\n", sel);
+}
+
+enum { MI_VIEW, MI_STYLE, MI_FPS, MI_LANG, MI_SQUARE, MI_TRIANGLE, MI_RSTICK, MI_TURBO, MI_QSAVE, MI_QLOAD,
        MI_CH_EXP, MI_CH_HUNGER, MI_BACK, MI_COUNT };
 
 static const char *OnOff(int v)
@@ -364,6 +410,12 @@ static void MenuLine(int item, char *buf, size_t size)
         case MI_VIEW: snprintf(buf, size, "Ansicht: %s", views[gPortConfig.viewMode]); break;
         case MI_STYLE: snprintf(buf, size, "Bilddarstellung: %s", styles[gPortConfig.displayStyle]); break;
         case MI_FPS: snprintf(buf, size, "Bildrate: %s", gPortConfig.frameRate30 ? "30 (Spieltempo bleibt)" : "60"); break;
+        case MI_LANG:
+            if (Port_TextMultilingual())
+                snprintf(buf, size, "Sprache: %s", sLangNames[gPortConfig.language < 0 ? 0 : gPortConfig.language]);
+            else
+                snprintf(buf, size, "Sprache: Englisch (die ROM hat nur eine Sprache)");
+            break;
         case MI_SQUARE: snprintf(buf, size, "Viereck: %s", gPortConfig.squareThrow ? "Gegenstand werfen (L+R)" : "B"); break;
         case MI_TRIANGLE: snprintf(buf, size, "Dreieck: %s", gPortConfig.triangleMove ? "Attacke einsetzen (L+A)" : "B"); break;
         case MI_RSTICK: snprintf(buf, size, "Rechter Stick = diagonal gehen (R+Richtung): %s", OnOff(gPortConfig.rightStickDiag)); break;
@@ -386,6 +438,10 @@ static int MenuChange(int item, int d)
 {
     switch (item) {
         case MI_VIEW: gPortConfig.viewMode = Wrap(gPortConfig.viewMode, d, 3); break;
+        case MI_LANG:
+            if (Port_TextMultilingual())
+                gPortConfig.language = Wrap(gPortConfig.language < 0 ? 0 : gPortConfig.language, d, PORT_LANG_COUNT);
+            break;
         case MI_STYLE: gPortConfig.displayStyle = Wrap(gPortConfig.displayStyle, d, 3); break;
         case MI_FPS: gPortConfig.frameRate30 ^= 1; break;
         case MI_SQUARE: gPortConfig.squareThrow ^= 1; break;
@@ -713,6 +769,9 @@ int main(int argc, char **argv)
     Port_Init(); /* loads settings.ini */
     Platform_Log("settings: view=%d style=%d fps30=%d turbo=%d\n", gPortConfig.viewMode,
                  gPortConfig.displayStyle, gPortConfig.frameRate30, gPortConfig.turbo);
+    if (Port_TextMultilingual() && gPortConfig.language < 0)
+        ChooseLanguage();
+    Platform_Log("settings: language=%d (multilingual ROM: %d)\n", gPortConfig.language, Port_TextMultilingual());
     Port_RunGame();
 
     sceKernelExitProcess(0);

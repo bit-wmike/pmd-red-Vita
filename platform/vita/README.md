@@ -9,7 +9,13 @@
    `9f4cfc5b5f4859d17169a485462e977c7aac2b89`); die Europa-ROM (B24P) wird
    ebenfalls unterstützt. Ihre Datenblöcke werden über den Inhalt gefunden,
    abweichende Blöcke (Texte, Schriften) teilweise übernommen, die gepackten
-   Boden-Tilesets der EU-ROM werden beim Start entpackt; ein Hinweis beim
+   Boden-Tilesets der EU-ROM werden beim Start entpackt. Mit der EU-ROM fragt
+   der Port beim ersten Start einmal nach der **Sprache** (Deutsch, Englisch,
+   Französisch, Italienisch, Spanisch); später lässt sie sich nur noch im
+   Port-Menü ändern, damit die Frage bei vorhandenem Spielstand nicht stört.
+   Der Port nimmt die Texte des US-Spielcodes und sucht die Übersetzung in der
+   ROM; einzelne Texte können englisch bleiben oder (bei geteilten
+   Standardtexten) eine Nachbarbeschreibung zeigen. Ein Hinweis beim
    Start und `log.txt` zeigen, wie viele Blöcke nur teilweise oder gar nicht
    passten. Der Spieltext ist in beiden Fällen der englische Text der
    Dekompilierung. Fehlende Dateien stehen in `log.txt` als
@@ -40,7 +46,7 @@ Start aus deiner ROM.
 ## Menü (START + SELECT)
 
 Ansicht (GBA, Breitbild, Weitsicht), Bilddarstellung (Weich, Scharf,
-Pixelgenau), Bildrate 60/30, Tastenbelegung (Viereck, Dreieck, rechter Stick,
+Pixelgenau), Bildrate 60/30, Sprache (nur EU-ROM), Tastenbelegung (Viereck, Dreieck, rechter Stick,
 Schnellvorlauf), Schnellspeichern / -laden und zwei sanfte Cheats:
 **Erfahrung ×1–×4** und **kein Hunger** (der Bauch sinkt nicht). Beide ändern
 nur das Tempo des Spiels, nichts an der Mechanik. Die Einstellungen landen in

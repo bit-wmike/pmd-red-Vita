@@ -1,3 +1,6 @@
+#ifdef PORT
+#include "../port/port_text.h"
+#endif
 #include "global.h"
 #include "globaldata.h"
 #include "pokemon.h"
@@ -653,6 +656,9 @@ void sub_808D930(u8 *buffer, s32 index)
 
 char * GetMonSpecies(s16 index)
 {
+#ifdef PORT
+    return (char *)Port_Text((const u8 *)sMonsterParameters[index].species);
+#endif
     return sMonsterParameters[index].species;
 }
 

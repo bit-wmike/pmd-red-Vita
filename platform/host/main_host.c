@@ -33,6 +33,7 @@
 #include "port/port_view.h"
 #include "port/port_config.h"
 #include "port/port_game.h"
+#include "port/port_text.h"
 
 static const char *sOutDir = "host_out";
 static int sMaxFrames = 600;
@@ -115,6 +116,7 @@ uint16_t Platform_PollKeys(void)
     int i;
     if (frame >= sMaxFrames) {
         Finish();
+        Port_TextLogStats();
         printf("host: done after %d frames\n", frame);
         exit(0);
     }
@@ -295,6 +297,8 @@ int main(int argc, char **argv)
     }
 
     Port_Init();
+    if ((e = getenv("PMD_LANG")) != NULL)
+        gPortConfig.language = atoi(e);
     if ((e = getenv("PMD_VIEW")) != NULL)
         gPortConfig.viewMode = gPortViewMode = atoi(e);
     if (getenv("PMD_30FPS"))

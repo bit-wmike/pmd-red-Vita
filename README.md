@@ -12,8 +12,11 @@ The original decompilation README is in [`docs/README-decomp.md`](docs/README-de
 built from the US version (`sha1: 9f4cfc5b5f4859d17169a485462e977c7aac2b89`);
 the European ROM (B24P) works too: its data blocks are found by content,
 blocks that differ (text, fonts) are taken over partly, its packed ground
-tilesets are unpacked, and the log reports what did not match. The game text
-is the English text of the decompilation in either case. At start-up the port reads graphics, maps and sounds from the
+tilesets are unpacked, and the log reports what did not match. With the
+European ROM the game text can be shown in German, French, Italian or
+Spanish: the port looks the English strings of the US code up in the ROM and
+takes the translation that lies next to them (asked once at the first start,
+later in the port menu). At start-up the port reads graphics, maps and sounds from the
 ROM file (the first start scans it once and caches the offsets in
 `romindex.txt`).
 

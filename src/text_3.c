@@ -1,3 +1,6 @@
+#ifdef PORT
+#include "../port/port_text.h"
+#endif
 #include "global.h"
 #include "text_1.h"
 #include "text_2.h"
@@ -85,6 +88,9 @@ UNUSED static void sub_8008E58(s32 a0, s32 a1, u8 *a2, s32 a3)
 s32 GetStringLineWidth(const u8 *str)
 {
     s32 ret = 0;
+#ifdef PORT
+    str = Port_Text(str);
+#endif
 
     while (TRUE) {
         const u8 *strPtr;
@@ -172,6 +178,9 @@ static void DrawStringInternal(Window *windows, s32 x, s32 y, const u8 *str, u32
 {
     UnkDrawStringStruct sp;
     u32 currChr;
+#ifdef PORT
+    str = Port_Text(str);
+#endif
 
     sp.x = x;
     sp.y = y;

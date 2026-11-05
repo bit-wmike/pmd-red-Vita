@@ -1,3 +1,6 @@
+#ifdef PORT
+#include "../port/port_text.h"
+#endif
 /*
  * The Minimal snprintf() implementation
  *
@@ -178,6 +181,9 @@ s32 mini_vpprintf(void *buf, const char *fmt, va_list va)
     char ch;
     s32 n;
     n = 0;
+#ifdef PORT
+    fmt = (const char *)Port_Text((const u8 *)fmt);
+#endif
     while ((ch=*(fmt++)))
     {
         s32 len;
@@ -278,6 +284,9 @@ s32 mini_vpprintf(void *buf, const char *fmt, va_list va)
 
                 case 's' :
                     ptr = va_arg(va, char*);
+#ifdef PORT
+                    ptr = (char *)Port_Text((const u8 *)ptr);
+#endif
                     len = mini_strlen(ptr);
                     if (pad_to > 0)
                     {

@@ -1,3 +1,6 @@
+#ifdef PORT
+#include "../port/port_text.h"
+#endif
 #include "global.h"
 #include "globaldata.h"
 #include "constants/input.h"
@@ -645,6 +648,9 @@ const u8 *FormatString(const u8 *str, u8 *dst, u8 *dstMax, u16 flags)
     bool8 r10 = TRUE;
     bool8 r9 = TRUE;
     dstMax--;
+#ifdef PORT
+    str = Port_Text(str);
+#endif
 
     while (TRUE) {
         u8 currChar = *str;
@@ -807,6 +813,9 @@ const u8 *FormatString(const u8 *str, u8 *dst, u8 *dstMax, u16 flags)
 static bool8 AppendString(const u8 *str, u8 **dstPtr, u8 *dstMax, u16 flags)
 {
     u8 *dst = *dstPtr;
+#ifdef PORT
+    str = Port_Text(str);
+#endif
     while (*str != '\0') {
         if (flags & STR_FORMAT_FLAG_NEW_LINE_TERMINATES && *str == '\r') {
             *dstPtr = dst;

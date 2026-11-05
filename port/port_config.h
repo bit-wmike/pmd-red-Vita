@@ -21,7 +21,8 @@ struct PortConfig {
     int rightStickDiag;  /* right stick = R + direction (diagonal moves) */
     /* cheats that only ease the mechanics */
     int expMultiplier;   /* 1..4: experience gained in dungeons */
-    int noHunger;        /* the belly does not go down */
+    int noHunger;
+    int language;        /* PORT_LANG_*: -1 = not chosen yet (European ROM only) */        /* the belly does not go down */
 };
 
 extern struct PortConfig gPortConfig;

@@ -95,7 +95,35 @@ Schalter: `PMD_SHOT=f1,f2` / `PMD_SHOT_EVERY=n` (PPM), `PMD_VIEW=0/1/2`, `PMD_WA
   PPMs** (`cmp`); (2) Renderer-Änderungen Bild für Bild gegen die alte Version vergleichen;
   (3) Vita-Build ohne Fehler.
 
-## Stand (0.1.5, 05.11.2026)
+## Stand (0.1.6, 05.11.2026)
+- 0.1.6: **Spieltext in Deutsch/Französisch/Italienisch/Spanisch aus der EU-ROM** (`port/port_text.c`).
+  Der US-Code liefert englische Strings (Binary + Datenblöcke); `Port_Text(s)` ersetzt sie zur
+  Laufzeit über einen Index aller Strings der ROM (Inhalt → erste Fundstelle). Drei Ablageformen
+  in der EU-ROM: (1) **Gruppen** EN,DE,FR,IT,ES hintereinander (Skripte, Sätze; nur EN hat einen
+  Zeiger – Erkennung: Folgestrings ohne Zeigerstelle, Wortüberlappung < 50 %); (2) **parallele
+  Zeigertabellen** (Namen, Beschreibungen, Kampfmeldungen): fünf Tabellen am Stück
+  (Monsternamen; Erkennung über identische IT/ES-Namen oder Sprache der Teiltabelle) oder
+  Tabelle/Strings/Tabelle/Strings (Items, Attacken; `ParallelAt`: exakt gleich lange Zeigerläufe,
+  Sprache per Wortliste/Sonderbuchstaben, sonst Reihenfolge EN,DE,FR,IT,ES – Achtung, manche
+  Tabellen haben EN,FR,DE); (3) **Pools** `{u16; Text; 0; Pad}` je Sprache in gleicher Reihenfolge
+  (Menüs, Quiz, Systemtexte; Pools gleicher Größe + Sprache werden gepaart, ein in den nächsten
+  Sprachblock durchlaufender Pool wird per Größen-Defizit geteilt); (4) **Code-Datenregionen**
+  (Dungeon-Meldungen aus `dungeon_strings.c`: kleine Varianten-Zeigertabellen + Strings; je
+  Sprache eine Region, die k-te Zeigerstelle entspricht sich; Regionen = zusammengefasste Pools
+  mit Zeigerkopf, Paarung nur bei gleicher Zeigerzahl – FR/ES weichen ab). Zeiger mitten in einen
+  String (Seitenumbruch `#P`) → `PageOf`: ganze Übersetzung, gleiche Seite. Hooks: `FormatString`,
+  `AppendString`, `DrawStringInternal`, `GetStringLineWidth`, `mini_vpprintf` (Format + `%s`),
+  `GetMonSpecies`. Einmal übersetzte Strings (`sResults`) werden nicht erneut übersetzt.
+  Test-Harness: Scratchpad `text_test3.c` (Strings → Übersetzung), `text_test4.c` (Herkunft).
+  Host: `PMD_LANG=1`. Vita: Sprachwahl einmal beim ersten Start mit EU-ROM (`ChooseLanguage`),
+  danach nur im Port-Menü („Sprache“); `settings.ini`-Schlüssel `language` (-1 = noch nicht gewählt).
+  Bekannte Grenzen: geteilte Standardtexte (z. B. „Inflicts damage on the target.“ für viele
+  Attacken) landen auf dem ersten Tabelleneintrag mit diesem Text → falsche Beschreibung;
+  Abhilfe wären Hooks mit Index (GetMoveDescription o. ä.). Namen aus RAM (Spielername) könnten
+  theoretisch übersetzt werden, wenn sie exakt einem ROM-String entsprechen.
+  Außerdem 0.1.6: erster Lauf bis ins Dungeon (Kleinhain) auf dem Host – `dungeon_map_access.c`
+  hatte ein hart kodiertes `0x06008000` (jetzt `VRAM + 0x8000`), vorher Absturz beim Betreten.
+  `PMD_TEXT_DEBUG=1` (Host) protokolliert jeden Text ohne Übersetzung.
 - 0.1.5: **EU-ROM läuft auf dem Host** (Mikes ROM liegt in der Cloud unter `/home/user/rom_eu/pmd_eu.gba`,
   SHA-1 `afee3b060dd5fd4a68afb1b003456aef3a2af073`; Logos, Titel, Intro, Quiz mit Text geprüft).
   Drei Ursachen für Schwarz-/Weißbild und Kästchen-Text:
@@ -155,5 +183,9 @@ Schalter: `PMD_SHOT=f1,f2` / `PMD_SHOT_EVERY=n` (PPM), `PMD_VIEW=0/1/2`, `PMD_WA
 3. Dungeon: `ShouldDisplayEntity` (±32 px) gilt auch für Logik – Monster/Items in den Rändern
    jenseits davon werden nicht gezeichnet; evtl. reine Render-Kopie einführen.
 4. Leistung messen (Vita: 424×240 Software-PPU mit 3 Threads; Old-3DS-Profil aktiv).
-5. Weitere sanfte Cheats (z. B. IQ-Multiplikator, Geld ×2) nur nach Rücksprache; Overlay/Karte
+5. **Schnellladen** sichert nur die RAM-Abschnitte (kein C-Stack): aus einer anderen Szene geladen
+   (z. B. Dungeon-Zustand während des Intros, `PMD_QLOAD_AT=10`) stürzt es in `ground_weather.c`
+   ab (`gUnknown_3001B74` NULL). Sicher nur innerhalb derselben Szene; Abhilfe: nach dem Laden den
+   Hauptschleifen-Zustand neu aufsetzen (`GameLoop_Async` von oben) oder Laden nur im selben Modus erlauben.
+6. Weitere sanfte Cheats (z. B. IQ-Multiplikator, Geld ×2) nur nach Rücksprache; Overlay/Karte
    wie beim TMC-Port.

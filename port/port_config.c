@@ -28,6 +28,7 @@ static struct Field sFields[] = {
     {"right_stick_diagonal", &gPortConfig.rightStickDiag, 0, 1},
     {"exp_multiplier", &gPortConfig.expMultiplier, 1, 4},
     {"no_hunger", &gPortConfig.noHunger, 0, 1},
+    {"language", &gPortConfig.language, -1, 4},
 };
 
 void Port_ConfigDefaults(void)
@@ -37,6 +38,7 @@ void Port_ConfigDefaults(void)
     gPortConfig.viewMode = PORT_VIEW_FULL;
     gPortConfig.displayStyle = PORT_STYLE_SHARP;
     gPortConfig.turbo = 1;
+    gPortConfig.language = -1;
     gPortConfig.squareThrow = 1;
     gPortConfig.triangleMove = 1;
     gPortConfig.rightStickDiag = 1;
