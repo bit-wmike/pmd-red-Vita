@@ -26,6 +26,10 @@ struct PortBlob {
     uint32_t holeCount;
     const uint64_t *chunks; /* FNV-1a 64 per PORT_CHUNK bytes (blocks >= 2 chunks) */
     uint32_t chunkCount;
+    /* the block's parts between its global symbols (files, tables): looked
+     * for one by one when the whole block is not in the ROM */
+    const struct PortBlob *children;
+    uint32_t childCount;
     const char *name;
 };
 

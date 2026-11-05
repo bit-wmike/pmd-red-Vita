@@ -11,7 +11,8 @@
    abweichende Blöcke (Texte, Schriften) teilweise übernommen; ein Hinweis beim
    Start und `log.txt` zeigen, wie viele Blöcke nur teilweise oder gar nicht
    passten. Der Spieltext ist in beiden Fällen der englische Text der
-   Dekompilierung.
+   Dekompilierung. Fehlende Dateien stehen in `log.txt` als
+   `file: not found in the game data: <name>`.
 3. Starten. Beim ersten Start durchsucht der Port die ROM einmal nach den
    Spieldaten (einige Sekunden) und merkt sich die Fundstellen in
    `romindex.txt`; danach startet er sofort.

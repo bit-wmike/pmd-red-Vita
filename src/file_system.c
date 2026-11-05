@@ -8,6 +8,24 @@ EWRAM_DATA OpenedFile gFileCache[64] = { 0 };
 
 static EWRAM_INIT u32 sFileCacheCursorPosition = { 0 };
 
+#ifdef PORT
+/* Port: a file that is not in the (other-version) ROM data: the game gets
+ * an empty file instead of a null pointer, and the log names it. */
+void Platform_Log(const char *fmt, ...);
+static OpenedFile *Port_MissingFile(const u8 *filename)
+{
+    static const u8 sEmpty[0x20000];
+    static File sFile;
+    static OpenedFile sOpened;
+    Platform_Log("file: not found in the game data: %s\n", filename);
+    sFile.name = (char *)filename;
+    sFile.data = sEmpty;
+    sOpened.file = &sFile;
+    sOpened.data = sEmpty;
+    return &sOpened;
+}
+#endif
+
 void InitFileSystem(void)
 {
     s32 i;
@@ -46,8 +64,13 @@ OpenedFile *OpenFile(const u8 *filename, const FileArchive *arc)
     if (!(bool8)magic)
         magicFound = 1;
 
-    if (!magicFound)
+    if (!magicFound) {
+#ifdef PORT
+        return Port_MissingFile(filename);
+#else
         return NULL;
+#endif
+    }
 
     entries = arc->entries;
     left = 0;
@@ -71,7 +94,11 @@ OpenedFile *OpenFile(const u8 *filename, const FileArchive *arc)
 
     if (strcmp(file->name, filename)) {
         sprintf(buffer, _("not find file [%s]\n"), filename);
+#ifdef PORT
+        return Port_MissingFile(filename);
+#else
         return NULL;
+#endif
     }
 
     cursor = sFileCacheCursorPosition;

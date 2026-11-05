@@ -175,11 +175,45 @@ def analyse_inner(args):
             for off, length in holes:
                 free[off:off + length] = b"\0" * length
             key1, off1, key2, off2, fill = keysel.select(data, free)
+            # Children: the ranges between global symbols (one game file or
+            # table each). When a whole section is not in the ROM as one
+            # piece (another ROM version), the children are looked for
+            # one by one.
+            bounds = {0, len(data)}
+            names = {}
+            for sym in all_syms:
+                if sym["st_shndx"] == sec_index and sym.name and sym["st_info"]["bind"] == "STB_GLOBAL" \
+                        and sym["st_info"]["type"] not in ("STT_SECTION", "STT_FILE"):
+                    bounds.add(sym["st_value"])
+                    names.setdefault(sym["st_value"], sym.name)
+            bounds = sorted(bounds)
+            ranges = []
+            for a, b in zip(bounds, bounds[1:]):
+                if ranges and ranges[-1][1] - ranges[-1][0] < 64:
+                    ranges[-1] = (ranges[-1][0], b)
+                else:
+                    ranges.append((a, b))
+            children = []
+            if len(ranges) >= 2:
+                for a, b in ranges:
+                    sub = data[a:b]
+                    k1, o1, k2, o2, fl = keysel.select(sub, free[a:b])
+                    subholes = []
+                    for off, length in holes:
+                        lo, hi = max(off, a), min(off + length, b)
+                        if lo < hi:
+                            subholes.append((lo - a, hi - lo))
+                    children.append({
+                        "off": a, "size": b - a, "hash": fnv64(sub),
+                        "chunks": [fnv64(sub[i:i + CHUNK]) for i in range(0, len(sub), CHUNK)] if len(sub) >= 2 * CHUNK else [],
+                        "key1": k1, "off1": o1, "key2": k2, "off2": o2, "fill": fl, "holes": subholes,
+                        "name": "%s:%s" % (blob, names.get(a, "+%x" % a)),
+                    })
             result["blobs"].append({
                 "name": blob, "size": len(data), "hash": fnv64(data),
                 "chunks": [fnv64(data[i:i + CHUNK]) for i in range(0, len(data), CHUNK)] if len(data) >= 2 * CHUNK else [],
                 "key1": key1, "off1": off1, "key2": key2, "off2": off2, "fill": fill,
-                "rom_addr": rom_addr, "holes": holes, "src": src, "sec": sec.name,
+                "rom_addr": rom_addr, "holes": holes, "src": src, "sec": sec.name, "children": children,
             })
             for sym in all_syms:
                 if sym["st_shndx"] != sec_index or not sym.name or sym["st_info"]["type"] in ("STT_SECTION", "STT_FILE"):
@@ -261,23 +295,37 @@ def main():
         for blob, off, target, addend in relocs:
             c.write("    { %s + %d, %s, %du },\n" % (blob, off, target, addend))
         c.write("};\nconst unsigned gPortRelocCount = sizeof(gPortRelocs) / sizeof(gPortRelocs[0]);\n\n")
+        def entry(dst, b, holes_name, chunks_name, rom_addr, children_name, child_count, name):
+            k1 = struct.unpack("<Q", b["key1"])[0] if b["key1"] else (b["fill"] if b["fill"] is not None else 0)
+            k2 = struct.unpack("<Q", b["key2"])[0] if b["key2"] else 0
+            off1 = b["off1"] if b["fill"] is None else -2
+            return "    { %s, %du, 0x%016xull, 0x%016xull, %d, 0x%016xull, %d, 0x%x, %s, %d, %s, %d, %s, %d, %s },\n" % (
+                dst, b["size"], b["hash"], k1, off1, k2, b["off2"], rom_addr,
+                holes_name if b["holes"] else "0", len(b["holes"]),
+                chunks_name if b["chunks"] else "0", len(b["chunks"]),
+                children_name, child_count, c_str(name))
         for i, b in enumerate(blobs):
             if b["holes"]:
                 c.write("static const uint32_t sHoles%d[] = {%s};\n" % (i, ",".join("%d,%d" % h for h in b["holes"])))
             if b["chunks"]:
                 c.write("static const uint64_t sChunks%d[] = {%s};\n" % (i, ",".join("0x%xull" % h for h in b["chunks"])))
+            for j, ch in enumerate(b["children"]):
+                if ch["holes"]:
+                    c.write("static const uint32_t sHoles%d_%d[] = {%s};\n" % (i, j, ",".join("%d,%d" % h for h in ch["holes"])))
+                if ch["chunks"]:
+                    c.write("static const uint64_t sChunks%d_%d[] = {%s};\n" % (i, j, ",".join("0x%xull" % h for h in ch["chunks"])))
+            if b["children"]:
+                c.write("static const struct PortBlob sChildren%d[] = {\n" % i)
+                for j, ch in enumerate(b["children"]):
+                    c.write(entry("%s + %d" % (b["name"], ch["off"]), ch, "sHoles%d_%d" % (i, j), "sChunks%d_%d" % (i, j), 0, "0", 0, ch["name"]))
+                c.write("};\n")
         c.write("\nconst struct PortBlob gPortBlobs[] = {\n")
         for i, b in enumerate(blobs):
-            k1 = struct.unpack("<Q", b["key1"])[0] if b["key1"] else (b["fill"] if b["fill"] is not None else 0)
-            k2 = struct.unpack("<Q", b["key2"])[0] if b["key2"] else 0
-            off1 = b["off1"] if b["fill"] is None else -2
-            c.write("    { %s, %du, 0x%016xull, 0x%016xull, %d, 0x%016xull, %d, 0x%x, %s, %d, %s, %d, %s },\n" % (
-                b["name"], b["size"], b["hash"], k1, off1, k2, b["off2"],
-                (b["rom_addr"] if b["rom_addr"] is not None else 0),
-                ("sHoles%d" % i) if b["holes"] else "0", len(b["holes"]),
-                ("sChunks%d" % i) if b["chunks"] else "0", len(b["chunks"]),
-                c_str("%s:%s" % (b["src"], b["sec"]))))
+            c.write(entry(b["name"], b, "sHoles%d" % i, "sChunks%d" % i, (b["rom_addr"] if b["rom_addr"] is not None else 0),
+                          ("sChildren%d" % i) if b["children"] else "0", len(b["children"]), "%s:%s" % (b["src"], b["sec"])))
         c.write("};\nconst unsigned gPortBlobCount = sizeof(gPortBlobs) / sizeof(gPortBlobs[0]);\n")
+        nchildren = sum(len(b["children"]) for b in blobs)
+        print("gen_data: %d child blocks" % nchildren)
 
     blobs = [b for b in blobs if not b.get("ram")]
     known = sum(1 for b in blobs if b["rom_addr"] is not None)

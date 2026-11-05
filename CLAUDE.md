@@ -95,7 +95,17 @@ Schalter: `PMD_SHOT=f1,f2` / `PMD_SHOT_EVERY=n` (PPM), `PMD_VIEW=0/1/2`, `PMD_WA
   PPMs** (`cmp`); (2) Renderer-Änderungen Bild für Bild gegen die alte Version vergleichen;
   (3) Vita-Build ohne Fehler.
 
-## Stand (0.1.3, 04.11.2026)
+## Stand (0.1.4, 05.11.2026)
+- 0.1.4: Mikes erster Lauf (0.1.3, EU-ROM) stürzte in `LoadCharmaps` ab: `OpenFileAndGetFileDataPtr`
+  lieferte NULL, weil das System-Archiv (`data/system_sbin.s`) in der EU-ROM nicht als Ganzes
+  gefunden wurde (Core-Dump mit eigenem Parser `/home/user/dumps/parse_dump.py` + `addr2line`
+  ausgewertet; `vita-parse-core` darf hier nicht ausgeführt werden). Abhilfe: (1) jeder
+  Datenblock hat **Kind-Blöcke** je globalem Symbol (eine Datei/Tabelle je Kind, `children`
+  in `PortBlob`); wird der Block nicht am Stück gefunden, werden die Kinder einzeln gesucht
+  (exakt, dann teilweise); (2) `OpenFile` liefert unter PORT bei fehlender Datei eine leere
+  Datei statt NULL und schreibt `file: not found in the game data: <name>` ins Log.
+  LiveArea-Bilder aus Mikes Vorlagen liegen in `platform/vita/sce_sys_local/` (git-ignoriert,
+  Nintendo-Artwork); die VPK wird damit gebaut, das Repo enthält weiter nur die Platzhalter.
 - 0.1.3: Mikes ROM ist die **Europa-Version** (B24P). Der Port nimmt sie an (`Port_RomVersion`
   prüft den Spielcode im Header), sucht alle Blöcke per Inhalt und übernimmt abweichende
   Blöcke teilweise (Chunk-Hashes à 512 Byte, `TryPartial`, ≥ 50 % Treffer; Test:
