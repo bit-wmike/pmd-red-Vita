@@ -7,8 +7,9 @@
    `ux0:data/pmd/` kopieren. Der Dateiname ist egal, Endung `.gba`, 32 MiB.
    Der Port ist aus der US-Version gebaut (SHA-1
    `9f4cfc5b5f4859d17169a485462e977c7aac2b89`); die Europa-ROM (B24P) wird
-   ebenfalls angenommen. Ihre Datenblöcke werden über den Inhalt gefunden,
-   abweichende Blöcke (Texte, Schriften) teilweise übernommen; ein Hinweis beim
+   ebenfalls unterstützt. Ihre Datenblöcke werden über den Inhalt gefunden,
+   abweichende Blöcke (Texte, Schriften) teilweise übernommen, die gepackten
+   Boden-Tilesets der EU-ROM werden beim Start entpackt; ein Hinweis beim
    Start und `log.txt` zeigen, wie viele Blöcke nur teilweise oder gar nicht
    passten. Der Spieltext ist in beiden Fällen der englische Text der
    Dekompilierung. Fehlende Dateien stehen in `log.txt` als
@@ -34,13 +35,13 @@ Start aus deiner ROM.
 | START / SELECT | wie auf dem GBA (SELECT: Etagenkarte, START: Drehmodus) |
 | Touchscreen halten | Schnellvorlauf (abschaltbar) |
 | START + SELECT | Port-Menü |
-| Rücktouch halten (wenn an) | links: schnellspeichern, rechts: schnellladen |
+| Rücktouch | bewusst unbelegt (zu leicht versehentlich berührt) |
 
 ## Menü (START + SELECT)
 
 Ansicht (GBA, Breitbild, Weitsicht), Bilddarstellung (Weich, Scharf,
 Pixelgenau), Bildrate 60/30, Tastenbelegung (Viereck, Dreieck, rechter Stick,
-Schnellvorlauf, Rücktouch), Schnellspeichern / -laden und zwei sanfte Cheats:
+Schnellvorlauf), Schnellspeichern / -laden und zwei sanfte Cheats:
 **Erfahrung ×1–×4** und **kein Hunger** (der Bauch sinkt nicht). Beide ändern
 nur das Tempo des Spiels, nichts an der Mechanik. Die Einstellungen landen in
 `settings.ini`. Die Versionsnummer steht oben im Menü und im LiveArea.

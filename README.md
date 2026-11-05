@@ -10,10 +10,10 @@ The original decompilation README is in [`docs/README-decomp.md`](docs/README-de
 
 **No game data is included.** The port needs your own dump of the ROM. It is
 built from the US version (`sha1: 9f4cfc5b5f4859d17169a485462e977c7aac2b89`);
-the European ROM (B24P) is accepted too: its data blocks are found by content,
-blocks that differ (text, fonts) are taken over partly, and the log reports
-what did not match. The game text is the English text of the decompilation in
-either case. At start-up the port reads graphics, maps and sounds from the
+the European ROM (B24P) works too: its data blocks are found by content,
+blocks that differ (text, fonts) are taken over partly, its packed ground
+tilesets are unpacked, and the log reports what did not match. The game text
+is the English text of the decompilation in either case. At start-up the port reads graphics, maps and sounds from the
 ROM file (the first start scans it once and caches the offsets in
 `romindex.txt`).
 
@@ -26,7 +26,7 @@ ROM file (the first start scans it once and caches the offsets in
   boxes stay where they are. Every other screen is centred in the frame.
 - Vita buttons: Square throws the set item (the game's L+R), Triangle uses
   the set move (L+A), the right stick moves diagonally (R + direction),
-  holding the touch screen fast-forwards, the rear touch quick-saves/loads.
+  holding the touch screen fast-forwards. The rear touch panel is not used.
 - In-game menu (START + SELECT): view, display style (smooth / sharp /
   pixel), 30 fps mode, button options, quick save/load, and two gentle
   cheats: an experience multiplier (×1–×4) and no hunger. Settings in

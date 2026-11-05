@@ -30,6 +30,7 @@ struct PortBlob {
      * for one by one when the whole block is not in the ROM */
     const struct PortBlob *children;
     uint32_t childCount;
+    const unsigned char *fallback; /* small blocks: their contents, used when not found */
     const char *name;
 };
 
@@ -41,12 +42,25 @@ extern const struct PortBlob gPortBlobs[];
 extern const unsigned gPortBlobCount;
 
 /* C arrays (INCBIN) registered by the generated per-file functions. */
-void PortAsset_Add(const char *name, void *dst, unsigned size, unsigned long long hash,
+void PortAsset_Add(const char *name, void *dst, unsigned size, unsigned capacity, unsigned long long hash,
                    unsigned long long key1, int keyOff1, unsigned long long key2, int keyOff2,
                    const unsigned long long *chunks, unsigned chunkCount);
 /* After Port_LoadRom: blocks taken over only partly (another ROM version)
  * and blocks not found at all. */
 extern unsigned gPortAssetsPartial, gPortAssetsMissing;
+
+/* The ROM's own file archives ("pksdir0"): a file by name, as a pointer into
+ * the ROM image (NULL if the ROM has no such file). */
+const unsigned char *Port_RomFile(const char *name);
+unsigned Port_RomFileSize(const char *name);
+/* Translates every 4-aligned word of the file that looks like a GBA ROM
+ * address into a host pointer (once per file). For files of another ROM
+ * version that carry pointers (charmaps, parameter tables). */
+void Port_RelocateRomFile(const unsigned char *data, unsigned size);
+/* How the port got the data block that contains `p`: 0 unknown, 1 exact,
+ * 2 partial, 4 embedded fallback, -1 not found. `holes` receives the number
+ * of pointer slots of that block. */
+int Port_AssetStateAt(const void *p, unsigned *holes);
 void PortAssets_RegisterAll(void);
 
 #endif

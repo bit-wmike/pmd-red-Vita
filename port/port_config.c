@@ -22,7 +22,6 @@ static struct Field sFields[] = {
     {"view_mode", &gPortConfig.viewMode, 0, 2},
     {"display_style", &gPortConfig.displayStyle, 0, 2},
     {"frame_rate_30", &gPortConfig.frameRate30, 0, 1},
-    {"rear_touch", &gPortConfig.rearTouch, 0, 1},
     {"turbo", &gPortConfig.turbo, 0, 1},
     {"square_throw", &gPortConfig.squareThrow, 0, 1},
     {"triangle_move", &gPortConfig.triangleMove, 0, 1},
@@ -37,7 +36,6 @@ void Port_ConfigDefaults(void)
     gPortConfig.configVersion = PORT_CONFIG_VERSION;
     gPortConfig.viewMode = PORT_VIEW_FULL;
     gPortConfig.displayStyle = PORT_STYLE_SHARP;
-    gPortConfig.rearTouch = 1;
     gPortConfig.turbo = 1;
     gPortConfig.squareThrow = 1;
     gPortConfig.triangleMove = 1;

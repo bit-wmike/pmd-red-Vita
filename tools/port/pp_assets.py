@@ -58,6 +58,10 @@ def main():
             inner *= int(eval(d))
         if dims[0].strip() == "":
             count = len(data) // (elem * inner)
+            if dm.group("name").startswith("gFile") and inner == 1:
+                # room for the same file of another ROM version (fonts,
+                # tilesets differ in size): a quarter more, at least 4 KiB
+                count += max(count // 4, 4096 // elem)
             new_dims = "[%d]" % count + "".join("[%s]" % d for d in dims[1:])
         else:
             new_dims = "".join("[%s]" % d for d in dims)
@@ -66,12 +70,22 @@ def main():
         if dm.group("brace"):
             end = text.index("}", end) + 1
         semi = text.index(";", end)
+        key1, off1, key2, off2, fill = keysel.select(data)
+        if key1 is None and fill is None:
+            # no usable search window (tiny, mixed content): the bytes stay
+            # in the binary, as the INCBIN would have put them
+            words = [int.from_bytes(data[i:i + elem], "little") for i in range(0, len(data), elem)]
+            new_decl = decl[:dm.start("name")] + "%s%s = {%s}" % (
+                dm.group("name"), new_dims, ",".join("%d" % w for w in words))
+            pieces.append(text[pos:start])
+            pieces.append(new_decl)
+            pos = semi
+            continue
         new_decl = decl[:dm.start("name")] + "%s%s __attribute__((section(\".data.pmd_asset\"))) = {0}" % (
             dm.group("name"), new_dims)
         pieces.append(text[pos:start])
         pieces.append(new_decl)
         pos = semi
-        key1, off1, key2, off2, fill = keysel.select(data)
         if fill is not None:
             k1, off1 = fill, -2
         else:
@@ -86,7 +100,7 @@ def main():
     with open(out, "w") as f:
         f.write(text)
         f.write("\n\n/* Port: game data of this file comes from the ROM (tools/port/pp_assets.py). */\n")
-        f.write("void PortAsset_Add(const char *name, void *dst, unsigned size, unsigned long long hash, "
+        f.write("void PortAsset_Add(const char *name, void *dst, unsigned size, unsigned capacity, unsigned long long hash, "
                 "unsigned long long key1, int keyOff1, unsigned long long key2, int keyOff2, "
                 "const unsigned long long *chunks, unsigned chunkCount);\n")
         for name, size, h, k1, off1, k2, off2, chunks in regs:
@@ -94,8 +108,8 @@ def main():
                 f.write("static const unsigned long long sPortChunks_%s[] = {%s};\n" % (name, ",".join("0x%xull" % c for c in chunks)))
         f.write("void %s(void)\n{\n" % func)
         for name, size, h, k1, off1, k2, off2, chunks in regs:
-            f.write("    PortAsset_Add(\"%s\", (void *)%s, %du, 0x%016xull, 0x%016xull, %d, 0x%016xull, %d, %s, %d);\n" % (
-                name, name, size, h, k1, off1, k2, off2, ("sPortChunks_%s" % name) if chunks else "0", len(chunks)))
+            f.write("    PortAsset_Add(\"%s\", (void *)%s, %du, sizeof(%s), 0x%016xull, 0x%016xull, %d, 0x%016xull, %d, %s, %d);\n" % (
+                name, name, size, name, h, k1, off1, k2, off2, ("sPortChunks_%s" % name) if chunks else "0", len(chunks)))
         f.write("}\n")
 
 

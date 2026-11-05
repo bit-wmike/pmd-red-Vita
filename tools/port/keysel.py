@@ -22,9 +22,21 @@ def select(data, free=None):
             continue
         best.append((s, q, w))
     if not best:
+        # no 4-aligned window: try every offset (short blocks between pointers)
+        for q in range(0, n - 7):
+            if free is not None and not all(free[q:q + 8]):
+                continue
+            w = bytes(data[q:q + 8])
+            s = len(set(w))
+            if s >= 2:
+                best.append((s, q, w))
+    if not best:
         vals = set(data[i] for i in range(n) if free is None or free[i])
-        fill = vals.pop() if len(vals) == 1 else 0
-        return (None, -1, None, -1, fill)
+        if len(vals) <= 1:
+            return (None, -1, None, -1, vals.pop() if vals else 0)
+        # no usable window and not constant: no key, the block is taken from
+        # the embedded copy (gen_data always keeps one in this case)
+        return (None, -1, None, -1, None)
     best.sort(key=lambda t: (-t[0], t[1]))
     s1, off1, key1 = best[0]
     key2, off2 = None, -1

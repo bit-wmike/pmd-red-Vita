@@ -348,7 +348,7 @@ static void AudioInit(void)
 
 /* ---- menu (START + SELECT) ---- */
 
-enum { MI_VIEW, MI_STYLE, MI_FPS, MI_SQUARE, MI_TRIANGLE, MI_RSTICK, MI_TURBO, MI_REAR, MI_QSAVE, MI_QLOAD,
+enum { MI_VIEW, MI_STYLE, MI_FPS, MI_SQUARE, MI_TRIANGLE, MI_RSTICK, MI_TURBO, MI_QSAVE, MI_QLOAD,
        MI_CH_EXP, MI_CH_HUNGER, MI_BACK, MI_COUNT };
 
 static const char *OnOff(int v)
@@ -368,7 +368,6 @@ static void MenuLine(int item, char *buf, size_t size)
         case MI_TRIANGLE: snprintf(buf, size, "Dreieck: %s", gPortConfig.triangleMove ? "Attacke einsetzen (L+A)" : "B"); break;
         case MI_RSTICK: snprintf(buf, size, "Rechter Stick = diagonal gehen (R+Richtung): %s", OnOff(gPortConfig.rightStickDiag)); break;
         case MI_TURBO: snprintf(buf, size, "Touchscreen halten = Schnellvorlauf: %s", OnOff(gPortConfig.turbo)); break;
-        case MI_REAR: snprintf(buf, size, "Ruecktouch halten: links speichern, rechts laden: %s", OnOff(gPortConfig.rearTouch)); break;
         case MI_QSAVE: snprintf(buf, size, "Schnellspeichern"); break;
         case MI_QLOAD: snprintf(buf, size, "Schnellladen"); break;
         case MI_CH_EXP: snprintf(buf, size, "Erfahrung x%d", gPortConfig.expMultiplier); break;
@@ -393,7 +392,6 @@ static int MenuChange(int item, int d)
         case MI_TRIANGLE: gPortConfig.triangleMove ^= 1; break;
         case MI_RSTICK: gPortConfig.rightStickDiag ^= 1; break;
         case MI_TURBO: gPortConfig.turbo ^= 1; break;
-        case MI_REAR: gPortConfig.rearTouch ^= 1; break;
         case MI_CH_EXP: gPortConfig.expMultiplier = 1 + Wrap(gPortConfig.expMultiplier - 1, d == 0 ? 1 : d, 4); break;
         case MI_CH_HUNGER: gPortConfig.noHunger ^= 1; break;
         case MI_QSAVE:
@@ -453,9 +451,9 @@ static void RunMenu(void)
             break;
     }
     Port_ConfigSave();
-    Platform_Log("[ui] menu closed: view=%d style=%d fps30=%d square=%d triangle=%d rstick=%d turbo=%d rear=%d exp=x%d hunger=%d\n",
+    Platform_Log("[ui] menu closed: view=%d style=%d fps30=%d square=%d triangle=%d rstick=%d turbo=%d exp=x%d hunger=%d\n",
                  gPortConfig.viewMode, gPortConfig.displayStyle, gPortConfig.frameRate30, gPortConfig.squareThrow,
-                 gPortConfig.triangleMove, gPortConfig.rightStickDiag, gPortConfig.turbo, gPortConfig.rearTouch,
+                 gPortConfig.triangleMove, gPortConfig.rightStickDiag, gPortConfig.turbo,
                  gPortConfig.expMultiplier, gPortConfig.noHunger);
     sAnchored = 0; /* the menu stalled the game: re-anchor the pacing */
 }
@@ -463,32 +461,7 @@ static void RunMenu(void)
 /* ---- input ---- */
 
 static int sWaitRelease; /* after the menu: ignore buttons until released */
-static int sRearHold, sRearSide, sRearDone;
-
-static void RearTouch(void)
-{
-    SceTouchData t;
-    if (!gPortConfig.rearTouch)
-        return;
-    if (sceTouchPeek(SCE_TOUCH_PORT_BACK, &t, 1) < 1 || t.reportNum == 0) {
-        sRearHold = sRearDone = 0;
-        return;
-    }
-    {
-        int side = t.report[0].x < 960 ? 1 : 2; /* rear panel is 1920 wide */
-        if (side != sRearSide)
-            sRearHold = sRearDone = 0;
-        sRearSide = side;
-    }
-    /* hold for about 0.75 s, so a stray touch does nothing */
-    if (!sRearDone && ++sRearHold >= 45) {
-        sRearDone = 1;
-        if (sRearSide == 1)
-            Port_RequestQuickSave();
-        else
-            Port_RequestQuickLoad();
-    }
-}
+/* The rear touch panel is deliberately unused: it is too easy to touch by accident. */
 
 uint16_t Platform_PollKeys(void)
 {
@@ -506,7 +479,6 @@ uint16_t Platform_PollKeys(void)
             return 0;
         sWaitRelease = 0;
     }
-    RearTouch();
 
     if (pad.buttons & SCE_CTRL_CROSS) keys |= KEY_A;    /* confirm / attack */
     if (pad.buttons & SCE_CTRL_CIRCLE) keys |= KEY_B;   /* cancel / run */
@@ -707,7 +679,6 @@ int main(int argc, char **argv)
     CheckGthreads();
 
     sceCtrlSetSamplingMode(SCE_CTRL_MODE_ANALOG);
-    sceTouchSetSamplingState(SCE_TOUCH_PORT_BACK, SCE_TOUCH_SAMPLING_STATE_START);
     sceTouchSetSamplingState(SCE_TOUCH_PORT_FRONT, SCE_TOUCH_SAMPLING_STATE_START);
     VideoInit();
     ShowProgress("ROM wird gelesen ... / reading the ROM ...");
@@ -740,8 +711,8 @@ int main(int argc, char **argv)
 
     AudioInit();
     Port_Init(); /* loads settings.ini */
-    Platform_Log("settings: view=%d style=%d fps30=%d turbo=%d rear=%d\n", gPortConfig.viewMode,
-                 gPortConfig.displayStyle, gPortConfig.frameRate30, gPortConfig.turbo, gPortConfig.rearTouch);
+    Platform_Log("settings: view=%d style=%d fps30=%d turbo=%d\n", gPortConfig.viewMode,
+                 gPortConfig.displayStyle, gPortConfig.frameRate30, gPortConfig.turbo);
     Port_RunGame();
 
     sceKernelExitProcess(0);

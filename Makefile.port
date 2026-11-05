@@ -59,7 +59,8 @@ CFLAGS := $(ARCHFLAGS) $(OPT) -std=gnu11 -fno-strict-aliasing -fwrapv -fno-commo
 # Game sources: everything except the GBA-only pieces replaced by port/.
 GAME_SRC := $(filter-out src/agb_flash.c src/agb_flash_1m.c src/agb_flash_le.c src/agb_flash_mx.c src/libisagbprn.c, \
               $(shell find src -name '*.c' -not -name '*.inc.c' | sort))
-DATA_SRC := $(sort $(wildcard data/*.s) $(wildcard sound/songs/*.s))
+# data/unk_9D02950.s is 1.4 MiB of unused data (data/unknown_unused): left out.
+DATA_SRC := $(filter-out data/unk_9D02950.s,$(sort $(wildcard data/*.s) $(wildcard sound/songs/*.s)))
 PORT_SRC := $(wildcard port/*.c) port/ppu/src/mode1.c port/ppu/src/virtuappu.c
 
 GAME_OBJ := $(patsubst %.c,$(BUILD)/%.o,$(GAME_SRC))
@@ -107,8 +108,12 @@ $(BUILD)/port/ppu/%.o: port/ppu/%.c
 	$(CC) $(CPPFLAGS) $(CFLAGS) -O3 -c $< -o $@
 
 # Assembler data files (data/*.s, songs) -> empty arrays + relocations.
-$(GEN)/data_blobs.s $(GEN)/data_relocs.c: tools/port/gen_data.py $(DATA_SRC)
+# (a stamp file: with -j the recipe of a multi-target rule would run twice)
+$(GEN)/data.stamp: tools/port/gen_data.py tools/port/keysel.py $(DATA_SRC)
 	$(PYTHON) tools/port/gen_data.py --out $(GEN) --as $(ARM_AS) $(DATA_SRC)
+	@touch $@
+$(GEN)/data_blobs.s $(GEN)/data_relocs.c: $(GEN)/data.stamp
+	@test -f $@
 $(BUILD)/gen/data_blobs.o: $(GEN)/data_blobs.s
 	@mkdir -p $(dir $@)
 	$(CC) $(ARCHFLAGS) -c $< -o $@
@@ -118,8 +123,11 @@ $(BUILD)/gen/data_relocs.o: $(GEN)/data_relocs.c
 
 # The hand-written sound engine core (src/m4a_1.s, src/arm_funcs.s) and the
 # ground-map routine of src/ground_map.c, translated to C.
-$(GEN)/m4a_asm.c $(GEN)/ground_map_asm.c: src/m4a_1.s src/arm_funcs.s src/ground_map.c tools/port/asm2c.py tools/port/gen_m4a.sh tools/port/extract_naked.py
+$(GEN)/asm.stamp: src/m4a_1.s src/arm_funcs.s src/ground_map.c tools/port/asm2c.py tools/port/gen_m4a.sh tools/port/extract_naked.py
 	sh tools/port/gen_m4a.sh
+	@touch $@
+$(GEN)/m4a_asm.c $(GEN)/ground_map_asm.c: $(GEN)/asm.stamp
+	@test -f $@
 $(BUILD)/gen/m4a_asm.o: $(GEN)/m4a_asm.c
 	@mkdir -p $(dir $@)
 	$(CC) $(CPPFLAGS) $(CFLAGS) -c $< -o $@

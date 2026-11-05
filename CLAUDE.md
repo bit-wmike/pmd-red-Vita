@@ -95,7 +95,22 @@ Schalter: `PMD_SHOT=f1,f2` / `PMD_SHOT_EVERY=n` (PPM), `PMD_VIEW=0/1/2`, `PMD_WA
   PPMs** (`cmp`); (2) Renderer-Änderungen Bild für Bild gegen die alte Version vergleichen;
   (3) Vita-Build ohne Fehler.
 
-## Stand (0.1.4, 05.11.2026)
+## Stand (0.1.5, 05.11.2026)
+- 0.1.5: **EU-ROM läuft auf dem Host** (Mikes ROM liegt in der Cloud unter `/home/user/rom_eu/pmd_eu.gba`,
+  SHA-1 `afee3b060dd5fd4a68afb1b003456aef3a2af073`; Logos, Titel, Intro, Quiz mit Text geprüft).
+  Drei Ursachen für Schwarz-/Weißbild und Kästchen-Text:
+  (1) Die EU-ROM speichert alle 178 Boden-Tilesets (`*.bpc`) **gepackt** (eigene Lauflängen-
+  Kodierung mit zwei Farbregistern, Chunk-Tabelle als High-/Low-Byte-Strom; Format als
+  Kommentar über `UnpackEuTiles` in `host_assets.c`). Der Lader entpackt sie beim Füllen der
+  `gFile*c`-Arrays (175/178 byteidentisch zur US-Datei, S02c/S05c haben in der EU weniger
+  Kacheln, T01P01c 3 andere Zellen). Referenz-Dekoder: Scratchpad `eufull.py`.
+  (2) `keysel.py` erklärte Blöcke ohne 4-Byte-ausgerichtetes Suchfenster zu **Konstantblöcken**
+  (Füllwert 0) – auch bei gemischtem Inhalt (z. B. Zeichentabellen-Zähler vor einem Zeiger, 593
+  Blöcke!). Jetzt: unausgerichtete Fenster, sonst eingebettete Kopie (`fallback`) ohne Schlüssel.
+  (3) `Verify` prüft in einem Zwischenpuffer; ein Fehlversuch löscht nicht mehr den Block
+  (vorher Index-Lauf ≠ Frischlauf). Außerdem: Index-Puffer 4 MiB, Rückseiten-Touch komplett
+  entfernt (Mike), ROM-Datei-Übernahme in `Port_ChooseFile` nur bei Zustand −1/2.
+  Spieltext bleibt Englisch (Strings aus der Decomp); Deutsch bräuchte die EU-Stringtabellen.
 - 0.1.4: Mikes erster Lauf (0.1.3, EU-ROM) stürzte in `LoadCharmaps` ab: `OpenFileAndGetFileDataPtr`
   lieferte NULL, weil das System-Archiv (`data/system_sbin.s`) in der EU-ROM nicht als Ganzes
   gefunden wurde (Core-Dump mit eigenem Parser `/home/user/dumps/parse_dump.py` + `addr2line`
@@ -130,11 +145,13 @@ Schalter: `PMD_SHOT=f1,f2` / `PMD_SHOT_EVERY=n` (PPM), `PMD_VIEW=0/1/2`, `PMD_WA
   `ux0:data/pmd/` legen und `log.txt` schicken.
 
 ## Offene Punkte (nächste Schritte)
-1. Test mit Mikes ROM auf der Vita: Startzeit (ROM-Scan), Leistung (`[perf]`), Weitsicht in
+1. Test mit Mikes ROM auf der Vita (0.1.5 ist der erste Stand, der auf dem Host mit der EU-ROM
+   durchläuft): Startzeit (ROM-Scan ~3 s auf x86), Leistung (`[perf]`), Weitsicht in
    echten Dungeons (Dunkelheit in den Rändern: oben/unten nutzen Zeile 0/159 der WIN1-Tabelle;
    Rasteranzeige/Effekte auf BG2 bleiben auf das GBA-Rechteck beschränkt).
 2. Weltkarte/Freundesareal-Karte sind in der Weitsicht (480×320-Bild), aber ungetestet
-   (der Pseudo-ROM-Lauf erreicht sie nicht); Menüfenster darauf prüfen.
+   (die Intro-Weltkarte ist eine Bodenkarte, Szene 2, 240 px breit sichtbar); Menüfenster prüfen.
+   Deutscher Spieltext aus der EU-ROM (Stringtabellen der EU-Sprachen finden) nur nach Rücksprache.
 3. Dungeon: `ShouldDisplayEntity` (±32 px) gilt auch für Logik – Monster/Items in den Rändern
    jenseits davon werden nicht gezeichnet; evtl. reine Render-Kopie einführen.
 4. Leistung messen (Vita: 424×240 Software-PPU mit 3 Threads; Old-3DS-Profil aktiv).

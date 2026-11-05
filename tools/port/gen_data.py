@@ -42,6 +42,10 @@ BASEROM_RE = re.compile(r'^(\s*)\.incbin\s+"baserom\.gba"\s*,\s*(0x[0-9a-fA-F]+|
 
 
 CHUNK = 512  # partial matches (other ROM versions) are judged per chunk
+# Blocks with less content than this outside their pointer slots (file names,
+# small tables, SIRO headers, archive directories) are kept in the binary as a
+# fallback for ROM versions where they differ.
+FALLBACK_MAX = 256
 
 
 def fnv64(data):
@@ -203,14 +207,17 @@ def analyse_inner(args):
                         lo, hi = max(off, a), min(off + length, b)
                         if lo < hi:
                             subholes.append((lo - a, hi - lo))
+                    content = sum(free[a:b])  # bytes outside pointer slots
                     children.append({
                         "off": a, "size": b - a, "hash": fnv64(sub),
+                        "fallback": bytes(sub) if content < FALLBACK_MAX or (o1 < 0 and fl is None) else None,
                         "chunks": [fnv64(sub[i:i + CHUNK]) for i in range(0, len(sub), CHUNK)] if len(sub) >= 2 * CHUNK else [],
                         "key1": k1, "off1": o1, "key2": k2, "off2": o2, "fill": fl, "holes": subholes,
                         "name": "%s:%s" % (blob, names.get(a, "+%x" % a)),
                     })
             result["blobs"].append({
                 "name": blob, "size": len(data), "hash": fnv64(data),
+                "fallback": bytes(data) if (sum(free) < FALLBACK_MAX or (off1 < 0 and fill is None)) and not children else None,
                 "chunks": [fnv64(data[i:i + CHUNK]) for i in range(0, len(data), CHUNK)] if len(data) >= 2 * CHUNK else [],
                 "key1": key1, "off1": off1, "key2": key2, "off2": off2, "fill": fill,
                 "rom_addr": rom_addr, "holes": holes, "src": src, "sec": sec.name, "children": children,
@@ -295,34 +302,40 @@ def main():
         for blob, off, target, addend in relocs:
             c.write("    { %s + %d, %s, %du },\n" % (blob, off, target, addend))
         c.write("};\nconst unsigned gPortRelocCount = sizeof(gPortRelocs) / sizeof(gPortRelocs[0]);\n\n")
-        def entry(dst, b, holes_name, chunks_name, rom_addr, children_name, child_count, name):
+        def entry(dst, b, holes_name, chunks_name, rom_addr, children_name, child_count, name, fallback_name):
             k1 = struct.unpack("<Q", b["key1"])[0] if b["key1"] else (b["fill"] if b["fill"] is not None else 0)
             k2 = struct.unpack("<Q", b["key2"])[0] if b["key2"] else 0
             off1 = b["off1"] if b["fill"] is None else -2
-            return "    { %s, %du, 0x%016xull, 0x%016xull, %d, 0x%016xull, %d, 0x%x, %s, %d, %s, %d, %s, %d, %s },\n" % (
+            return "    { %s, %du, 0x%016xull, 0x%016xull, %d, 0x%016xull, %d, 0x%x, %s, %d, %s, %d, %s, %d, %s, %s },\n" % (
                 dst, b["size"], b["hash"], k1, off1, k2, b["off2"], rom_addr,
                 holes_name if b["holes"] else "0", len(b["holes"]),
                 chunks_name if b["chunks"] else "0", len(b["chunks"]),
-                children_name, child_count, c_str(name))
+                children_name, child_count, fallback_name if b.get("fallback") else "0", c_str(name))
+        def fb(name, data):
+            c.write("static const unsigned char %s[] = {%s};\n" % (name, ",".join(str(x) for x in data)))
         for i, b in enumerate(blobs):
             if b["holes"]:
                 c.write("static const uint32_t sHoles%d[] = {%s};\n" % (i, ",".join("%d,%d" % h for h in b["holes"])))
             if b["chunks"]:
                 c.write("static const uint64_t sChunks%d[] = {%s};\n" % (i, ",".join("0x%xull" % h for h in b["chunks"])))
+            if b.get("fallback"):
+                fb("sFb%d" % i, b["fallback"])
             for j, ch in enumerate(b["children"]):
                 if ch["holes"]:
                     c.write("static const uint32_t sHoles%d_%d[] = {%s};\n" % (i, j, ",".join("%d,%d" % h for h in ch["holes"])))
                 if ch["chunks"]:
                     c.write("static const uint64_t sChunks%d_%d[] = {%s};\n" % (i, j, ",".join("0x%xull" % h for h in ch["chunks"])))
+                if ch.get("fallback"):
+                    fb("sFb%d_%d" % (i, j), ch["fallback"])
             if b["children"]:
                 c.write("static const struct PortBlob sChildren%d[] = {\n" % i)
                 for j, ch in enumerate(b["children"]):
-                    c.write(entry("%s + %d" % (b["name"], ch["off"]), ch, "sHoles%d_%d" % (i, j), "sChunks%d_%d" % (i, j), 0, "0", 0, ch["name"]))
+                    c.write(entry("%s + %d" % (b["name"], ch["off"]), ch, "sHoles%d_%d" % (i, j), "sChunks%d_%d" % (i, j), 0, "0", 0, ch["name"], "sFb%d_%d" % (i, j)))
                 c.write("};\n")
         c.write("\nconst struct PortBlob gPortBlobs[] = {\n")
         for i, b in enumerate(blobs):
             c.write(entry(b["name"], b, "sHoles%d" % i, "sChunks%d" % i, (b["rom_addr"] if b["rom_addr"] is not None else 0),
-                          ("sChildren%d" % i) if b["children"] else "0", len(b["children"]), "%s:%s" % (b["src"], b["sec"])))
+                          ("sChildren%d" % i) if b["children"] else "0", len(b["children"]), "%s:%s" % (b["src"], b["sec"]), "sFb%d" % i))
         c.write("};\nconst unsigned gPortBlobCount = sizeof(gPortBlobs) / sizeof(gPortBlobs[0]);\n")
         nchildren = sum(len(b["children"]) for b in blobs)
         print("gen_data: %d child blocks" % nchildren)

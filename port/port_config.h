@@ -15,7 +15,6 @@ struct PortConfig {
     int viewMode;        /* PORT_VIEW_* */
     int displayStyle;    /* PORT_STYLE_* */
     int frameRate30;     /* render every second frame (game speed unchanged) */
-    int rearTouch;       /* rear touch: left = quick save, right = quick load */
     int turbo;           /* fast forward allowed (front touch held / host key) */
     int squareThrow;     /* Square = L+R (throw the set item) instead of B */
     int triangleMove;    /* Triangle = L+A (use the set move) instead of fast forward */
