@@ -52,6 +52,8 @@ extern unsigned gPortAssetsPartial, gPortAssetsMissing;
 /* The ROM's own file archives ("pksdir0"): a file by name, as a pointer into
  * the ROM image (NULL if the ROM has no such file). */
 const unsigned char *Port_RomFile(const char *name);
+/* A tileset file (*c) of the user's ROM, unpacked when it is packed. */
+const unsigned char *Port_RomTilesetFile(const char *name);
 unsigned Port_RomFileSize(const char *name);
 /* Translates every 4-aligned word of the file that looks like a GBA ROM
  * address into a host pointer (once per file). For files of another ROM
@@ -62,6 +64,8 @@ void Port_RelocateRomFile(const unsigned char *data, unsigned size);
  * 2 partial, 4 embedded fallback, -1 not found. `holes` receives the number
  * of pointer slots of that block. */
 int Port_AssetStateAt(const void *p, unsigned *holes);
+/* Pointer slots of that block from p on (holes of at most 64 bytes). */
+unsigned Port_AssetPointersFrom(const void *p);
 void PortAssets_RegisterAll(void);
 
 #endif

@@ -33,7 +33,7 @@ fetch)
     rm -rf "$out"
     mkdir -p "$out/screenshots" "$out/dumps"
     echo "== Logs"
-    ftp "lcd '$out'; mget -O . $DATA/log.txt $DATA/log_prev.txt $DATA/crumbs.txt $DATA/settings.ini $DATA/quicksave.bin" || true
+    ftp "lcd '$out'; mget -O . $DATA/log.txt $DATA/log_prev.txt $DATA/crumbs.txt $DATA/settings.ini $DATA/quicksave.bin $DATA/pmd_red.sav" || true
     echo "== Core-Dumps (ux0:data/*.psp2dmp)"
     ftp "lcd '$out/dumps'; mget -O . 'ux0:/data/*.psp2dmp'" 2>/dev/null || true
     echo "== Screenshots (alle Unterordner)"

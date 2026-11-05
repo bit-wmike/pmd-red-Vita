@@ -63,7 +63,8 @@ extern const Tile *gCurTilesetOobTile;
 static int sActive;
 static int sWidth = PORT_GBA_W, sHeight = PORT_GBA_H;
 static int sDx, sDy;
-static int sContentW = PORT_GBA_W, sContentH = PORT_GBA_H; /* the part of the frame that shows the map */
+static int sContentW = PORT_GBA_W, sContentH = PORT_GBA_H;
+static int sPictureMap; /* the current ground map is a GBA-screen picture (S02 ...) */ /* the part of the frame that shows the map */
 static int sScene, sSceneLatched;
 static uint32_t sSceneFrame;
 
@@ -232,21 +233,58 @@ static int DarknessActive(void)
     return dark >= 3;
 }
 
+/* A map of one flat chunk (the black dream scenes): nothing to extend,
+ * the GBA screen stays centred so that the game's centred text is. */
+static int UniformMap(const MapRender *mr)
+{
+    static const u16 *lastChunks;
+    static int lastW, lastH, lastResult;
+    const u16 *chunks = mr->chunkMappings[0], *tiles = mr->tileMappings;
+    int dim = mr->chunkDimensions == CHUNK_DIMENSIONS_2x2 ? 2 : 3;
+    int cx, cy, k, w = mr->widthChunks, h = mr->heightChunks;
+    if (chunks == NULL || tiles == NULL || w <= 0 || h <= 0 || w > 64)
+        return 0;
+    if (chunks == lastChunks && w == lastW && h == lastH && (Port_FrameCounter() & 31) != 0)
+        return lastResult;
+    lastChunks = chunks;
+    lastW = w;
+    lastH = h;
+    lastResult = 0;
+    for (cy = 0; cy < h; cy++)
+        for (cx = 0; cx < w; cx++)
+            if (chunks[cy * 64 + cx] != chunks[0])
+                return 0;
+    for (k = 1; k < dim * dim; k++)
+        if (tiles[chunks[0] * 9 + k] != tiles[chunks[0] * 9])
+            return 0;
+    lastResult = 1;
+    return 1;
+}
+
+/* The title screen (S02), the health warning (S05) and S06 are ground maps
+ * made for the 240x160 screen, wider than it (the title pans) and with
+ * stray rows below: shown at the map's width and the GBA screen's rows. */
+static int PictureMapName(const char *name)
+{
+    size_t n = strlen(name);
+    return n >= 4 && name[0] == 'S' && name[1] >= '0' && name[1] <= '9' && name[2] >= '0' && name[2] <= '9' && name[n - 1] == 'c';
+}
+
 /* The ground map's camera (top-left of the GBA screen) and map size. */
 static int GroundInfo(int *camX, int *camY, int *mapW, int *mapH, int *wrap)
 {
     GroundBg *g = gGroundMapDungeon_3001B70;
-    /* the title screen (S02) and the health warning (S05) are ground maps
-     * made for the 240x160 screen with stray rows beyond it; shown as
-     * pictures without a map */
-    if (g != NULL && g->bpcFile != NULL && g->bpcFile->file != NULL && g->bpcFile->file->name != NULL &&
-        (strcmp((const char *)g->bpcFile->file->name, "S02c") == 0 || strcmp((const char *)g->bpcFile->file->name, "S05c") == 0))
-        return 0;
     PixelPos cam;
+    sPictureMap = 0;
     if (g == NULL || g->unk474 <= 0 || g->mapRender[0].chunkDimensions == 0)
         return 0;
     if (!sub_809D248(&cam))
         return 0;
+    if (UniformMap(&g->mapRender[0]))
+        return 0;
+    if (g->bpcFile != NULL && g->bpcFile->file != NULL && g->bpcFile->file->name != NULL &&
+        PictureMapName((const char *)g->bpcFile->file->name))
+        sPictureMap = 1;
     *camX = cam.x;
     *camY = cam.y;
     *mapW = g->mapRender[0].mapSizePixels.x;
@@ -289,7 +327,10 @@ void Port_ViewOnVBlank(void)
                 break;
             case PORT_SCENE_GROUND:
                 if (GroundInfo(&camX, &camY, &mapW, &mapH, &wrap)) {
-                    if (wrap) {
+                    if (sPictureMap) {
+                        cw = ClampToRoom(w, mapW, PORT_GBA_W);
+                        ch = PORT_GBA_H;
+                    } else if (wrap) {
                         cw = w;
                         ch = h;
                     } else if (mapW > PORT_GBA_W && mapH > PORT_GBA_H) {
@@ -438,7 +479,8 @@ static void FillGround(int bg, const MapRender *mr, int layer, int x0, int y0, i
                 if (wx < 0)
                     wx += widthTiles;
             }
-            if (wx < 0 || wy < 0 || wx >= widthTiles || wy >= heightTiles || cy >= mr->heightChunks) {
+            if (wx < 0 || wy < 0 || wx >= widthTiles || wy >= heightTiles || cy >= mr->heightChunks ||
+                (sPictureMap && (ty * 8 < mr->cameraPos.y || ty * 8 >= mr->cameraPos.y + PORT_GBA_H))) {
                 row[c] = BLANK_ENTRY;
                 continue;
             }
@@ -547,6 +589,12 @@ void Port_ViewBlankRows(int *top, int *bottom)
     {
         uint16_t d1, d2, d3, dispstat;
         memcpy(&d1, gHostIo + 0x0C6, 2); memcpy(&d2, gHostIo + 0x0D2, 2); memcpy(&d3, gHostIo + 0x0DE, 2); memcpy(&dispstat, gHostIo + 4, 2);
+        if (gGroundMapDungeon_3001B70 != NULL) {
+            const MapRender *mr = &gGroundMapDungeon_3001B70->mapRender[0];
+            Platform_Log("blank: dispcnt %04x map %dx%d chunks %dx%d dim %d wrap %d cam %d,%d ctx %d bgs %d first %d\n", IO16(0),
+                         mr->mapSizePixels.x, mr->mapSizePixels.y, mr->widthChunks, mr->heightChunks, mr->chunkDimensions, mr->wrapAround,
+                         mr->cameraPos.x, mr->cameraPos.y, gGroundMapDungeon_3001B70->unk474, mr->numBgs, mr->unk2);
+        }
         Platform_Log("blank: active %d scene %d content %dx%d dx %d dy %d dma %04x %04x %04x dispstat %04x bpc %s\n", sActive, sSceneLatched, sContentW, sContentH, sDx, sDy, d1, d2, d3, dispstat,
                      (gGroundMapDungeon_3001B70 && gGroundMapDungeon_3001B70->bpcFile && gGroundMapDungeon_3001B70->bpcFile->file) ? (const char *)gGroundMapDungeon_3001B70->bpcFile->file->name : "-");
     }

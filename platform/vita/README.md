@@ -13,6 +13,8 @@
    der Port beim ersten Start einmal nach der **Sprache** (Deutsch, Englisch,
    Französisch, Italienisch, Spanisch); später lässt sie sich nur noch im
    Port-Menü ändern, damit die Frage bei vorhandenem Spielstand nicht stört.
+   Titelbild („TEAM ROT“), Gesundheitshinweis und S06 kommen in der gewählten Sprache
+   aus der EU-ROM (eigene Karten `S02_GER`, `S05_GER` …).
    Der Port nimmt die Texte des US-Spielcodes und sucht die Übersetzung in der
    ROM; einzelne Texte können englisch bleiben oder (bei geteilten
    Standardtexten) eine Nachbarbeschreibung zeigen. Ein Hinweis beim

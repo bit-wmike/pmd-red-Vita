@@ -95,7 +95,30 @@ Schalter: `PMD_SHOT=f1,f2` / `PMD_SHOT_EVERY=n` (PPM), `PMD_VIEW=0/1/2`, `PMD_WA
   PPMs** (`cmp`); (2) Renderer-Änderungen Bild für Bild gegen die alte Version vergleichen;
   (3) Vita-Build ohne Fehler.
 
-## Stand (0.1.11, 05.11.2026)
+## Stand (0.1.12, 05.11.2026)
+- 0.1.12 (Mikes `run4`, 0.1.11: Absturz vor dem ersten Dungeon, Titel/Gesundheitshinweis englisch bzw.
+  „fehlerhaft“, Tastatur-Müll bei der Namensgebung, Traumtext nicht zentriert): (1) **Absturz**: `lvmp001`
+  (Levelkurve, AT-gepackt, 616-Byte-Block mit SIRO-Kopf) wird aus der EU-ROM genommen; `Port_ChooseFile`
+  zählte den SIRO-Zeiger des Kopfes als „Zeiger im Inhalt“ und ließ `Port_RelocateRomFile` die gepackten
+  Daten nach Aussehen „übersetzen“ (5 Wörter zerstört → Dekompression läuft Amok). Jetzt zählt
+  `Port_AssetPointersFrom(p)` nur Löcher ≤ 64 Byte ab `p` (große Löcher = baserom-Daten). Auf dem Host nicht
+  bis zum Dungeon nachgespielt (Skript kommt nicht am Smettbo-Gespräch vorbei) – Mike testet.
+  (2) **Tastatur**: `#C4OVR#R` wurde per Tabellenzuordnung zu „$m0 legt das Item $i0 an.“ (Parallel-Lauf ohne
+  erkennbare Sprache, Position genommen). `Translate` verwirft jetzt Kandidaten, deren Platzhalterfolge
+  (`$`/`%`) nicht zur Vorlage passt (`Placeholders`); `PMD_TEXT_DEBUG=2` protokolliert jede Übersetzung.
+  (3) **Sprachvarianten der Bild-Karten**: Die EU-ROM hat `S02_GER/S02_GERc/S02_GERm`, `S05_…`, `S06_…` (Titel
+  „TEAM ROT“, Gesundheitshinweis, S06) je Sprache (`_GER/_FRE/_ITA/_SPA`); `Port_VariantFile`
+  (file_system.c) nimmt sie statt der US-Datei, Tilesets über `Port_RomTilesetFile` (entpackt, gecacht).
+  (4) **Titel**: S0x-Karten (`PictureMapName`, auch Varianten) werden jetzt als Karte mit Breite der Karte und
+  Höhe des GBA-Fensters gezeigt (`sPictureMap`; `FillGround` blendet Zeilen außerhalb der Kamera-160 aus) –
+  vorher nur das VRAM-Fenster mit einer schwarzen Kerbe unten in den Randspalten. Ränder = Hintergrundfarbe
+  (Himmel), oben/unten schwarz.
+  (5) **Traumtext** („Wo bin ich?“) steht links: die Szene ist die Kleinhain-Karte `D01P01` (432×360) mit
+  schwarzer Palette, Kamera in der Ecke (−1,0) → GBA-Fenster links im Bild (Fenster folgt der Kamera und stoppt
+  am Kartenrand), der Text ist im GBA-Fenster zentriert. Nicht behoben; Alternative wäre eine fest zentrierte
+  UI-Ebene (BG0 mit eigenem dx) – Rücksprache mit Mike. `UniformMap` (einfarbige Karten → Bild mittig) ist
+  drin, greift hier aber nicht (Karte hat echte Kacheln).
+  (6) `vita.sh fetch` holt jetzt auch `pmd_red.sav`.
 - 0.1.11 (Mikes `run3`-Screenshots): (1) **Sprite-Fragment** (Glumandas Schwanzflamme links unten):
   das Spiel parkt unbenutzte OAM-Einträge unter Zeile 160; der Renderer rechnete sie wie
   Port-platzierte Sprites um (Basis aus altem Slot) → sichtbar im Rand. Jetzt merkt

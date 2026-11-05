@@ -39,6 +39,7 @@ struct Entry {
 
 static struct Entry *sIndex, *sSites, *sCache, *sResults;
 static int sInitDone, sEnabled, sCacheLang, sDebug;
+static int sDebugAll; /* PMD_TEXT_DEBUG=2: every translation */
 static unsigned sGroups, sTables, sPools_, sMisses, sCalls;
 
 static uint32_t Fnv32(const unsigned char *p, size_t n)
@@ -808,6 +809,19 @@ int Port_TextMultilingual(void)
 
 static const unsigned char *PageOf(const unsigned char *s);
 
+/* A translation keeps the placeholders of its original ($m0, $i0, %s ...):
+ * a candidate with other placeholders is a wrong match (a short label such
+ * as "OVR" read as the entry of a parallel table). */
+static int Placeholders(uint32_t off)
+{
+    int n = 0;
+    uint32_t i;
+    for (i = off; i < gHostRomSize && gHostRom[i] != 0 && i - off < MAX_STR; i++)
+        if (gHostRom[i] == '$' || gHostRom[i] == '%')
+            n = n * 8 + (gHostRom[i] == '$' ? 1 : 2);
+    return n;
+}
+
 static long Translate(uint32_t r, int lang)
 {
     long res = Get(sCache, CACHE_BITS, r); /* 0 = none, else offset + 1 */
@@ -827,6 +841,12 @@ static long Translate(uint32_t r, int lang)
         else
             sMisses++;
     }
+    if (res >= 0 && Placeholders(r) != Placeholders((uint32_t)res)) {
+        if (sDebug)
+            Platform_Log("text: placeholders differ, rejected: [%.40s] -> [%.40s]\n", gHostRom + r, gHostRom + res);
+        res = -1;
+        sMisses++;
+    }
     Put(sCache, CACHE_BITS, r, res < 0 ? 0 : (uint32_t)res + 1, 0);
     if (res >= 0)
         Put(sResults, RESULT_BITS, (uint32_t)res, 1, 1);
@@ -843,6 +863,7 @@ const unsigned char *Port_Text(const unsigned char *s)
     if (!sInitDone) {
         sInitDone = 1;
         sDebug = getenv("PMD_TEXT_DEBUG") != NULL || gPortConfig.textDebug;
+        sDebugAll = getenv("PMD_TEXT_DEBUG") != NULL && atoi(getenv("PMD_TEXT_DEBUG")) >= 2;
         sEnabled = Port_TextMultilingual();
         if (sEnabled)
             BuildIndex();
@@ -883,6 +904,8 @@ const unsigned char *Port_Text(const unsigned char *s)
             Platform_Log("text: no translation at %06lx: [%.60s]\n", r, s);
         return s;
     }
+    if (sDebugAll)
+        Platform_Log("text: %06lx [%.60s] -> %06lx [%.60s]\n", r, s, res, gHostRom + res);
     return gHostRom + res;
 }
 

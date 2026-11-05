@@ -14,6 +14,8 @@ static EWRAM_INIT u32 sFileCacheCursorPosition = { 0 };
 
 #ifdef PORT
 #include "port/port_assets.h"
+#include "port/port_config.h"
+#include "port/port_text.h"
 void Platform_Log(const char *fmt, ...);
 extern unsigned char *gHostRom;
 extern size_t gHostRomSize;
@@ -34,8 +36,13 @@ static const File *Port_ChooseFile(const File *file, s32 cursor)
     const u8 *d = (const u8 *)file->data;
 
     /* a SIRO header is a tiny block of its own: what matters is its content */
-    if (d[0] == 'S' && d[1] == 'I' && d[2] == 'R' && d[3] == 'O')
+    /* holes: pointer slots only (large holes are baserom.gba data such
+     * as compressed files: lvmp001 was "translated" and crashed the game) */
+    holes = Port_AssetPointersFrom(d);
+    if (d[0] == 'S' && d[1] == 'I' && d[2] == 'R' && d[3] == 'O') {
         contentState = Port_AssetStateAt(((const SiroArchive *)d)->data, &contentHoles);
+        contentHoles = Port_AssetPointersFrom(((const SiroArchive *)d)->data);
+    }
 #ifndef __vita__
     if (getenv("PMD_FILE_DEBUG"))
         Platform_Log("file: open %s: header state %d, content state %d\n", file->name, state, contentState);
@@ -77,6 +84,33 @@ static const File *Port_ChooseFile(const File *file, s32 cursor)
 
 /* Port: a file that is not in the (other-version) ROM data: the game gets
  * an empty file instead of a null pointer, and the log names it. */
+/* The European ROM keeps the title screen (S02), the health warning (S05)
+ * and S06 as ground maps per language: S02_GER, S02_GERc, S02_GERm ... The
+ * file of the chosen language replaces the English one when the ROM has
+ * it. Palettes and maps are plain data, tilesets are unpacked. */
+static const File *Port_VariantFile(const File *file, s32 cursor)
+{
+    static const char *const sLangTag[PORT_LANG_COUNT] = { "", "_GER", "_FRE", "_ITA", "_SPA" };
+    static char sNames[64][16];
+    const char *name = file->name;
+    int lang = gPortConfig.language;
+    const unsigned char *rom;
+    size_t n = strlen(name);
+    if (lang <= PORT_LANG_EN || lang >= PORT_LANG_COUNT || !Port_TextMultilingual())
+        return Port_ChooseFile(file, cursor);
+    if (!(n == 3 || n == 4) || name[0] != 'S' || name[1] < '0' || name[1] > '9' || name[2] < '0' || name[2] > '9' ||
+        (n == 4 && name[3] != 'c' && name[3] != 'm'))
+        return Port_ChooseFile(file, cursor);
+    snprintf(sNames[cursor], sizeof(sNames[cursor]), "%.3s%s%s", name, sLangTag[lang], name + 3);
+    rom = (n == 4 && name[3] == 'c') ? Port_RomTilesetFile(sNames[cursor]) : Port_RomFile(sNames[cursor]);
+    if (rom == NULL)
+        return Port_ChooseFile(file, cursor);
+    Platform_Log("file: %s taken from the user's ROM in place of %s\n", sNames[cursor], name);
+    sPortFiles[cursor].name = sNames[cursor];
+    sPortFiles[cursor].data = rom;
+    return &sPortFiles[cursor];
+}
+
 static OpenedFile *Port_MissingFile(const u8 *filename, const FileArchive *arc, int why)
 {
     static const u8 sEmpty[0x20000];
@@ -179,7 +213,7 @@ OpenedFile *OpenFile(const u8 *filename, const FileArchive *arc)
 
         if (!gFileCache[cursor].file) {
 #ifdef PORT
-            gFileCache[cursor].file = Port_ChooseFile(file, cursor);
+            gFileCache[cursor].file = Port_VariantFile(file, cursor);
 #else
             gFileCache[cursor].file = file;
 #endif

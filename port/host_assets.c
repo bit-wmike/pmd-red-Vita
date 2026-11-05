@@ -665,6 +665,31 @@ int Port_AssetStateAt(const void *p, unsigned *holes)
     return 0;
 }
 
+/* Pointer slots (holes of at most 64 bytes: pointers, small pointer
+ * tables) of the block that contains p, counted from p on. Large holes are
+ * baserom.gba data (compressed files, samples), not pointers. */
+unsigned Port_AssetPointersFrom(const void *p)
+{
+    size_t lo = 0, hi = sByAddressCount;
+    const unsigned char *q = (const unsigned char *)p;
+    unsigned i, n = 0;
+    while (lo < hi) {
+        size_t mid = (lo + hi) / 2;
+        if (sByAddress[mid]->dst + sByAddress[mid]->size <= q)
+            lo = mid + 1;
+        else
+            hi = mid;
+    }
+    if (lo >= sByAddressCount || sByAddress[lo]->dst > q)
+        return 0;
+    for (i = 0; i < sByAddress[lo]->holeCount; i++) {
+        uint32_t off = sByAddress[lo]->holes[i * 2], len = sByAddress[lo]->holes[i * 2 + 1];
+        if (sByAddress[lo]->dst + off >= q && len <= 64)
+            n++;
+    }
+    return n;
+}
+
 struct RomFile {
     uint32_t nameOff;
     uint32_t dataOff;
@@ -996,6 +1021,49 @@ unsigned Port_FillPointerFields(const unsigned char *portCopy, unsigned char *ro
         n++;
     }
     return n;
+}
+
+/* A tileset file (*c) of the user's ROM unpacked into its raw form, kept
+ * for the rest of the run (the language variants of the title and warning
+ * screens: S02_GERc ...). NULL when the ROM has no such file. */
+const unsigned char *Port_RomTilesetFile(const char *name)
+{
+    static struct { char name[16]; unsigned char *data; } cache[8];
+    static unsigned used;
+    struct RomFile *f = FindRomFile(name);
+    const unsigned char *src;
+    unsigned w, h, numTiles, numChunks, raw, got, i;
+    unsigned char *dst;
+    if (f == NULL)
+        return NULL;
+    for (i = 0; i < used; i++)
+        if (strcmp(cache[i].name, name) == 0)
+            return cache[i].data;
+    src = gHostRom + f->dataOff;
+    if (f->size < 16)
+        return src;
+    w = src[0] | (src[1] << 8);
+    h = src[2] | (src[3] << 8);
+    numTiles = src[4] | (src[5] << 8);
+    numChunks = src[14] | (src[15] << 8);
+    if (w != h || (w != 2 && w != 3) || numTiles == 0 || numChunks == 0)
+        return src;
+    raw = 16 + (numTiles - 1) * 32 + (numChunks - 1) * w * h * 2;
+    dst = (unsigned char *)malloc(raw);
+    if (dst == NULL)
+        return src;
+    got = UnpackEuTiles(dst, raw, src, f->size, Port_RomVersion(gHostRom, gHostRomSize) == 'P');
+    if (got == 0) {
+        free(dst);
+        return src; /* not packed */
+    }
+    if (used < 8) {
+        strncpy(cache[used].name, name, sizeof(cache[used].name) - 1);
+        cache[used].data = dst;
+        used++;
+    }
+    Platform_Log("file: %s unpacked from the user's ROM (%u -> %u bytes)\n", name, f->size, raw);
+    return dst;
 }
 
 const unsigned char *Port_RomFile(const char *name)
