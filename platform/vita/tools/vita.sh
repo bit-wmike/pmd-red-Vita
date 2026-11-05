@@ -48,7 +48,7 @@ fetch)
     cd "$here"
     git add -A "runs/$name"
     git commit -q -m "Vita run $name"
-    git pull -q --rebase origin main || true
+    git pull -q --rebase --autostash origin main || true
     git push
     echo "== fertig: runs/$name ist auf GitHub"
     ;;
@@ -62,7 +62,7 @@ log)
     ;;
 install)
     # ./vita.sh install   -> newest VPK from builds/ (git pull first) onto the Vita
-    cd "$here" && git pull -q --rebase origin main || true
+    cd "$here" && git pull -q --rebase --autostash origin main || true
     vpk="$(ls -1 "$here"/builds/*.vpk 2>/dev/null | sort -V | tail -1)"
     [ -n "$vpk" ] || { echo "keine VPK in builds/"; exit 1; }
     echo "== $vpk"
