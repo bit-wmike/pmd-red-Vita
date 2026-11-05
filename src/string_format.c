@@ -1,5 +1,6 @@
 #ifdef PORT
 #include "../port/port_text.h"
+#include "port/port_comfort.h"
 #endif
 #include "global.h"
 #include "globaldata.h"
@@ -314,7 +315,11 @@ void DrawDialogueBoxString_Async(void)
                 const u8 *str = sCurrStr;
                 s32 txtSpeed;
 
+#ifdef PORT
+                if (sInstantText || Port_TextInstant()) {
+#else
                 if (sInstantText) {
+#endif
                     txtSpeed = 99999;
                 }
                 else {
@@ -466,6 +471,14 @@ void DrawDialogueBoxString_Async(void)
                     else if (sDialogueMenuTouchScreenInput.unk5) {
                         buttonPress = TRUE;
                     }
+#ifdef PORT
+                    /* Port: holding A reads on after a short delay (text_auto);
+                     * menus use button edges, so they are never answered. */
+                    else if (Port_TextAutoFrames() > 0 && (gRealInputs.held & A_BUTTON)
+                             && sArrowFrames >= Port_TextAutoFrames()) {
+                        buttonPress = TRUE;
+                    }
+#endif
                 }
 
                 if (!buttonPress) {

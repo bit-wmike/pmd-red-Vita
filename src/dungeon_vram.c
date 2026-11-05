@@ -1,6 +1,7 @@
 #include "global.h"
 #ifdef PORT
 #include "port/port_view.h"
+#include "port/port_comfort.h"
 #endif
 #include "globaldata.h"
 #include "dungeon_vram.h"
@@ -169,6 +170,14 @@ void DungeonRunFrameActions(u32 a0)
 
 static void sub_803E490(u32 unused)
 {
+#ifdef PORT
+    /* Port: faster dungeon animations run two or three logic frames per
+     * displayed frame (dungeon_speed); the floor autosave fires at the
+     * first frame that waits for the player's input. */
+    int skipWait = Port_DungeonSkipFrameWait(unused);
+    if (unused == 0xF)
+        Port_FloorInputFrame();
+#endif
     sUnknown_202EDD4++;
     xxx_draw_string_80524F0();
     sub_8085F78();
@@ -213,12 +222,24 @@ static void sub_803E490(u32 unused)
 
     gDungeonFramesCounter++;
 
-    IncrementPlayTime(gPlayTimeRef);
 #ifdef PORT
-    Port_ViewSceneFrame(PORT_SCENE_DUNGEON);
-#endif
+    if (skipWait) {
+        /* No VBlank this logic frame: the shown frame's inputs stay held,
+         * their edges are consumed only once. */
+        gRealInputs.pressed = 0;
+        gRealInputs.repeated = 0;
+        gRealInputs.shortPress = 0;
+    } else {
+        IncrementPlayTime(gPlayTimeRef);
+        Port_ViewSceneFrame(PORT_SCENE_DUNGEON);
+        WaitForNextFrameAndAdvanceRNG();
+        LoadBufferedInputs();
+    }
+#else
+    IncrementPlayTime(gPlayTimeRef);
     WaitForNextFrameAndAdvanceRNG();
     LoadBufferedInputs();
+#endif
     CopySpritesToOam();
     nullsub_13();
     sub_8005304();

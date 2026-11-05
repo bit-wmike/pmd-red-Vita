@@ -9,6 +9,9 @@
 #include "input.h"
 #include "textbox.h"
 #include "unk_ds_only_feature.h"
+#ifdef PORT
+#include "port/port_comfort.h"
+#endif
 
 void nullsub_117(void)
 {
@@ -93,7 +96,11 @@ u32 sub_809CDC8(struct GroundLives_Sub120 *strPtr, u32 *r6, s8 *direction, s32 *
             u16 held = gRealInputs.held;
             u16 pressed = gRealInputs.pressed;
             if (held & DPAD_ANY) {
+#ifdef PORT
+                if ((held & B_BUTTON) || Port_WalkFast()) { /* port: always run */
+#else
                 if (held & B_BUTTON) {
+#endif
                     strPtr->unk10 = 0;
                 }
                 else {

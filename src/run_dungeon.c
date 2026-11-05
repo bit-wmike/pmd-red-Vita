@@ -1,6 +1,9 @@
 #include "global.h"
 #include "globaldata.h"
 #include "run_dungeon.h"
+#ifdef PORT
+#include "port/port_comfort.h"
+#endif
 #include "constants/dungeon.h"
 #include "constants/dungeon_exit.h"
 #include "constants/fixed_rooms.h"
@@ -396,6 +399,9 @@ void RunDungeon_Async(DungeonSetupStruct *setupPtr)
         else {
             sub_803E7C8();
         }
+#ifdef PORT
+        Port_FloorStarted(); /* floor autosave, port/port_comfort.c */
+#endif
         sub_8040094(0);
         sub_803EAF0(0, NULL);
         InitDungeonMap(r6);
