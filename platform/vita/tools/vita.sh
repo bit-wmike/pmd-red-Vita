@@ -24,7 +24,14 @@ PORT="${PORT:-1337}"
 URL="ftp://$VITA:$PORT"
 DATA="ux0:/data/pmd"
 
-ftp() { lftp -e "set net:timeout 10; set net:max-retries 2; set ftp:passive-mode on; $1; bye" "$URL"; }
+# the Vita answers only while VitaShell's FTP server runs (Select in VitaShell)
+reach() {
+    if ! nc -z -w 3 "$VITA" "${PORT:-1337}" 2>/dev/null; then
+        echo "Vita $VITA:${PORT:-1337} nicht erreichbar: VitaShell oeffnen, Select druecken (FTP), IP mit vita.conf vergleichen"
+        exit 1
+    fi
+}
+ftp() { reach; lftp -e "set net:timeout 10; set net:max-retries 2; set ftp:passive-mode on; $1; bye" "$URL"; }
 
 case "${1:-}" in
 fetch)
