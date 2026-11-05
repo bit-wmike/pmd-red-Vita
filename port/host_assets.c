@@ -7,7 +7,9 @@
  * files, tools/port/pp_assets.py for INCBIN arrays in C). At start the ROM
  * is scanned for those contents, the arrays are filled and the pointers
  * inside the assembler data get their host addresses. The ROM offsets found
- * are cached in romindex.txt, so later starts only copy.
+ * are cached in romindex.txt (keyed by the ROM's SHA-1 and a hash of the
+ * block table, so a new port version with unchanged data keeps it), so
+ * later starts only copy.
  */
 #include <stdint.h>
 #include <stdlib.h>
@@ -16,10 +18,6 @@
 
 #include "port/port.h"
 #include "port/port_assets.h"
-
-#ifndef PMD_PORT_VERSION
-#define PMD_PORT_VERSION "dev"
-#endif
 
 /* Pokémon Mystery Dungeon: Red Rescue Team (USA) - the version this build
  * is made for (the decomp's baserom). */
@@ -41,6 +39,7 @@ struct Asset {
     uint32_t chunkCount;
     uint32_t romAddr; /* 0 = unknown */
     int found;        /* 1 = exact, 2 = partial, 3 = through the children, 4 = embedded fallback */
+    int absent;       /* the index says the scans did not find it: not scanned again */
     int parent;       /* index of the containing block, -1 */
     uint32_t childCount;
     const unsigned char *fallback;
@@ -323,7 +322,7 @@ static unsigned Bucket(uint64_t k)
 /* Which assets a scan pass looks for. */
 static int Wanted(const struct Asset *a, int mode)
 {
-    if (a->found || a->keyOff1 < 0)
+    if (a->found || a->absent || a->keyOff1 < 0)
         return 0;
     switch (mode) {
         case SCAN_PARENTS: return a->parent < 0;
@@ -391,7 +390,7 @@ static size_t CountUnfound(void)
     size_t i, n = 0;
     for (i = 0; i < sAssetCount; i++) {
         const struct Asset *a = &sAssets[i];
-        if (!a->found && !a->childCount)
+        if (!a->found && !a->absent && !a->childCount)
             n++;
     }
     return n;
@@ -399,33 +398,97 @@ static size_t CountUnfound(void)
 
 /* ---- the cached index ---- */
 
-static void IndexHeader(char *buf, size_t size)
+/* The SHA-1 of the loaded ROM, computed once (32 MiB take a while on the Vita). */
+void Port_RomSha1(unsigned char out[20])
 {
-    unsigned char sha[20];
-    int i, n;
-    Port_Sha1(gHostRom, gHostRomSize, sha);
-    n = snprintf(buf, size, "pmdidx 1 %s", PMD_PORT_VERSION);
-    for (i = 0; i < 20 && n < (int)size; i++)
-        n += snprintf(buf + n, size - n, "%02x", sha[i]);
+    static unsigned char sha[20];
+    static const unsigned char *shaOf;
+    static size_t shaSize;
+    if (shaOf != gHostRom || shaSize != gHostRomSize) {
+        Port_Sha1(gHostRom, gHostRomSize, sha);
+        shaOf = gHostRom;
+        shaSize = gHostRomSize;
+    }
+    memcpy(out, sha, 20);
+}
+
+static void HashBytes(uint64_t *h, const void *p, size_t n)
+{
+    const unsigned char *b = (const unsigned char *)p;
+    while (n--) {
+        *h ^= *b++;
+        *h *= 0x100000001b3ull;
+    }
+}
+
+/* A hash over the block table (names, sizes, content hashes, probe keys,
+ * holes, chunk hashes of every block, children and INCBIN arrays included):
+ * the cache is keyed by it, not by the port version, so a new version with
+ * unchanged data reuses it, while any change to a block forces a rescan. */
+static uint64_t TableHash(void)
+{
+    uint64_t h = 0xcbf29ce484222325ull;
+    size_t i;
+    uint32_t n = (uint32_t)sAssetCount;
+    HashBytes(&h, &n, 4);
+    for (i = 0; i < sAssetCount; i++) {
+        const struct Asset *a = &sAssets[i];
+        int32_t parent = a->parent;
+        HashBytes(&h, a->name, strlen(a->name) + 1);
+        HashBytes(&h, &a->size, 4);
+        HashBytes(&h, &a->hash, 8);
+        HashBytes(&h, &a->key1, 8);
+        HashBytes(&h, &a->keyOff1, 4);
+        HashBytes(&h, &a->key2, 8);
+        HashBytes(&h, &a->keyOff2, 4);
+        HashBytes(&h, &a->romAddr, 4);
+        HashBytes(&h, &a->holeCount, 4);
+        if (a->holes)
+            HashBytes(&h, a->holes, (size_t)a->holeCount * 2 * 4);
+        HashBytes(&h, &a->chunkCount, 4);
+        if (a->chunks)
+            HashBytes(&h, a->chunks, (size_t)a->chunkCount * 8);
+        HashBytes(&h, &a->childCount, 4);
+        HashBytes(&h, &parent, 4);
+    }
+    return h;
+}
+
+/* The header line of romindex.txt. Computed once, before the scan (the scan
+ * changes the romAddr fields that the table hash covers). */
+static char sIndexHeader[160];
+
+static const char *IndexHeader(void)
+{
+    if (!sIndexHeader[0]) {
+        unsigned char sha[20];
+        size_t size = sizeof(sIndexHeader);
+        int i, n;
+        Port_RomSha1(sha);
+        n = snprintf(sIndexHeader, size, "pmdidx 2 %016llx ", (unsigned long long)TableHash());
+        for (i = 0; i < 20 && n < (int)size; i++)
+            n += snprintf(sIndexHeader + n, size - n, "%02x", sha[i]);
+    }
+    return sIndexHeader;
 }
 
 static void LoadIndex(void)
 {
     static char text[4 << 20];
-    char header[160];
+    const char *header = IndexHeader();
     long n = Platform_ReadFile("romindex.txt", text, sizeof(text) - 1);
     char *line;
-    size_t hits = 0, i;
+    size_t hits = 0, absent = 0, i;
     if (n <= 0)
         return;
     text[n] = 0;
-    IndexHeader(header, sizeof(header));
     line = strtok(text, "\n");
     if (!line || strcmp(line, header) != 0) {
-        Platform_Log("assets: romindex.txt is for another ROM or version\n");
+        Platform_Log("assets: romindex.txt is for another ROM or other data blocks\n");
         return;
     }
-    /* "name romAddr" per line, looked up through a name hash table */
+    /* "name romAddr" per line ("name -": the scans did not find the block,
+     * so it is not scanned again), looked up through a name hash table */
     if (!sBuckets)
         sBuckets = (int *)malloc(sizeof(int) << TABLE_BITS);
     memset(sBuckets, 0xFF, sizeof(int) << TABLE_BITS);
@@ -444,15 +507,19 @@ static void LoadIndex(void)
         addr = strtoul(sp + 1, NULL, 16);
         for (idx = sBuckets[Bucket(StrHash(line))]; idx >= 0; idx = sAssets[idx].next) {
             struct Asset *a = &sAssets[idx];
-            if (a->found || strcmp(a->name, line) != 0)
+            if (a->found || a->absent || strcmp(a->name, line) != 0)
                 continue;
-            if (addr >= 0x08000000ul &&
-                (Verify(a, (uint32_t)(addr - 0x08000000ul)) || TryPartial(a, (uint32_t)(addr - 0x08000000ul))))
+            if (sp[1] == '-') {
+                a->absent = 1;
+                absent++;
+            } else if (addr >= 0x08000000ul &&
+                       (Verify(a, (uint32_t)(addr - 0x08000000ul)) || TryPartial(a, (uint32_t)(addr - 0x08000000ul))))
                 hits++;
             break;
         }
     }
-    Platform_Log("assets: %u of %u blocks from romindex.txt\n", (unsigned)hits, (unsigned)sAssetCount);
+    Platform_Log("assets: %u of %u blocks from romindex.txt, %u known to be absent\n", (unsigned)hits, (unsigned)sAssetCount,
+                 (unsigned)absent);
 }
 
 static void SaveIndex(void)
@@ -461,14 +528,13 @@ static void SaveIndex(void)
     char *text = (char *)malloc(cap);
     if (!text)
         return;
-    IndexHeader(text, cap);
-    n = strlen(text);
-    text[n++] = '\n';
+    n = (size_t)snprintf(text, cap, "%s\n", IndexHeader());
     for (i = 0; i < sAssetCount; i++) {
         struct Asset *a = &sAssets[i];
-        if (a->found != 1 && a->found != 2)
-            continue;
-        n += (size_t)snprintf(text + n, cap - n, "%s %08x\n", a->name, a->romAddr);
+        if (a->found == 1 || a->found == 2)
+            n += (size_t)snprintf(text + n, cap - n, "%s %08x\n", a->name, a->romAddr);
+        else if (a->found == 0)
+            n += (size_t)snprintf(text + n, cap - n, "%s -\n", a->name); /* the scans did not find it */
     }
     if (Platform_WriteFile("romindex.txt", text, n) != 0)
         Platform_Log("assets: cannot write romindex.txt\n");

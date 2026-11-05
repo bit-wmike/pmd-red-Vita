@@ -9,7 +9,12 @@
  *    table, strings ... (items, moves, descriptions, battle messages).
  * The English string is located by content (an index of every string of the
  * ROM), then the scheme is decided from the bytes around it and from the
- * pointer sites that reference it. */
+ * pointer sites that reference it.
+ *
+ * Building the index reads the whole ROM several times (seconds on the
+ * Vita), so the result (string index, pointer-site index, pools, regions:
+ * ROM offsets only, no host pointers) is kept in textindex.bin next to
+ * romindex.txt and loaded from there on later starts. */
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
@@ -38,6 +43,7 @@ struct Entry {
 };
 
 static struct Entry *sIndex, *sSites, *sCache, *sResults;
+static unsigned char *sIndexBlob; /* textindex.bin image: header, sIndex, sSites, pools, regions */
 static int sInitDone, sEnabled, sCacheLang, sDebug;
 static int sDebugAll; /* PMD_TEXT_DEBUG=2: every translation */
 static unsigned sGroups, sTables, sPools_, sMisses, sCalls;
@@ -152,18 +158,180 @@ static void BuildPools(void);
 static void BuildRegions(void);
 static void PreferEnglishStrings(void);
 
+/* ---- the cached index (textindex.bin) ----
+ *
+ * File layout (little-endian, as both the Vita and the test hosts are):
+ *   struct TextIndexHeader (64 bytes)
+ *   sIndex   (1 << INDEX_BITS) entries of {u32 key, u32 val}
+ *   sSites   (1 << SITE_BITS) entries
+ *   pools    poolCount x {u32 start, end, count; i32 lang, kind}
+ *   regions  regionCount x {u32 start, end, count; i32 lang}
+ * Everything is a ROM offset or a count. The file is read straight into the
+ * block that holds sIndex and sSites (no second copy: the Vita's heap is
+ * tight). TEXT_INDEX_FORMAT must be raised whenever the builder changes
+ * (BuildIndex, BuildPools, BuildRegions, PreferEnglishStrings, the table
+ * sizes or the string rules above). */
+#define TEXT_INDEX_FILE "textindex.bin"
+#define TEXT_INDEX_MAGIC 0x58444954u /* "TIDX" */
+#define TEXT_INDEX_FORMAT 1
+#define TEXT_INDEX_HEADER 64
+
+struct TextIndexHeader {
+    uint32_t magic, format;
+    unsigned char sha1[20];
+    uint32_t indexBits, siteBits;
+    uint32_t fillIndex, fillSites;
+    uint32_t poolCount, regionCount;
+    uint32_t total; /* size of the file */
+    uint32_t reserved[2];
+};
+
+#define POOL_MAX 128
+#define REGION_MAX 32
+#define POOL_WORDS 5
+#define REGION_WORDS 4
+#define INDEX_BYTES ((size_t)sizeof(struct Entry) << INDEX_BITS)
+#define SITE_BYTES ((size_t)sizeof(struct Entry) << SITE_BITS)
+#define TEXT_INDEX_MAX (TEXT_INDEX_HEADER + INDEX_BYTES + SITE_BYTES + POOL_MAX * POOL_WORDS * 4 + REGION_MAX * REGION_WORDS * 4)
+
+struct Pool;
+struct Region;
+static int PoolsToWords(uint32_t *w);
+static int RegionsToWords(uint32_t *w);
+static void PoolsFromWords(const unsigned char *b, uint32_t n);
+static void RegionsFromWords(const unsigned char *b, uint32_t n);
+static void CountPoolsRegions(uint32_t *pools, uint32_t *regions);
+
+static uint32_t Rd32(const unsigned char *p)
+{
+    return (uint32_t)p[0] | (uint32_t)p[1] << 8 | (uint32_t)p[2] << 16 | (uint32_t)p[3] << 24;
+}
+
+static void Wr32(unsigned char *p, uint32_t v)
+{
+    p[0] = (unsigned char)v;
+    p[1] = (unsigned char)(v >> 8);
+    p[2] = (unsigned char)(v >> 16);
+    p[3] = (unsigned char)(v >> 24);
+}
+
+/* The index of a previous run, read into sIndexBlob: 1 when it is for this
+ * ROM and this builder, else 0 (and the tables are left zeroed). */
+static int LoadIndexFile(long n)
+{
+    const unsigned char *h = sIndexBlob;
+    unsigned char sha[20];
+    uint32_t poolCount, regionCount, total, fillIndex, fillSites;
+    if (n < TEXT_INDEX_HEADER)
+        return 0;
+    if (Rd32(h) != TEXT_INDEX_MAGIC || Rd32(h + 4) != TEXT_INDEX_FORMAT) {
+        Platform_Log("text: " TEXT_INDEX_FILE " has another format\n");
+        return 0;
+    }
+    Port_RomSha1(sha);
+    if (memcmp(h + 8, sha, 20) != 0) {
+        Platform_Log("text: " TEXT_INDEX_FILE " is for another ROM\n");
+        return 0;
+    }
+    fillIndex = Rd32(h + 36);
+    fillSites = Rd32(h + 40);
+    poolCount = Rd32(h + 44);
+    regionCount = Rd32(h + 48);
+    total = Rd32(h + 52);
+    if (Rd32(h + 28) != INDEX_BITS || Rd32(h + 32) != SITE_BITS || poolCount > POOL_MAX || regionCount > REGION_MAX ||
+        fillIndex > (1u << INDEX_BITS) || fillSites > (1u << SITE_BITS) ||
+        total != TEXT_INDEX_HEADER + INDEX_BYTES + SITE_BYTES + poolCount * POOL_WORDS * 4 + regionCount * REGION_WORDS * 4 ||
+        (long)total != n) {
+        Platform_Log("text: " TEXT_INDEX_FILE " has unexpected sizes (%ld bytes)\n", n);
+        return 0;
+    }
+    {
+        /* the sizes say the file is complete; a damaged table could still
+         * send Get() looping, so count the used entries */
+        uint32_t i, used = 0;
+        for (i = 0; i < (1u << INDEX_BITS); i++)
+            used += sIndex[i].val != 0;
+        if (used != fillIndex)
+            return 0;
+        for (i = 0, used = 0; i < (1u << SITE_BITS); i++)
+            used += sSites[i].val != 0;
+        if (used != fillSites)
+            return 0;
+    }
+    sFill[0] = fillIndex;
+    sFill[1] = fillSites;
+    PoolsFromWords(sIndexBlob + TEXT_INDEX_HEADER + INDEX_BYTES + SITE_BYTES, poolCount);
+    RegionsFromWords(sIndexBlob + TEXT_INDEX_HEADER + INDEX_BYTES + SITE_BYTES + poolCount * POOL_WORDS * 4, regionCount);
+    return 1;
+}
+
+/* Writes the built index (sIndexBlob already holds sIndex and sSites). */
+static void SaveIndexFile(void)
+{
+    unsigned char *h = sIndexBlob, *p;
+    uint32_t pools, regions, total, i;
+    CountPoolsRegions(&pools, &regions);
+    total = (uint32_t)(TEXT_INDEX_HEADER + INDEX_BYTES + SITE_BYTES + pools * POOL_WORDS * 4 + regions * REGION_WORDS * 4);
+    memset(h, 0, TEXT_INDEX_HEADER);
+    Wr32(h, TEXT_INDEX_MAGIC);
+    Wr32(h + 4, TEXT_INDEX_FORMAT);
+    Port_RomSha1(h + 8);
+    Wr32(h + 28, INDEX_BITS);
+    Wr32(h + 32, SITE_BITS);
+    Wr32(h + 36, sFill[0]);
+    Wr32(h + 40, sFill[1]);
+    Wr32(h + 44, pools);
+    Wr32(h + 48, regions);
+    Wr32(h + 52, total);
+    p = sIndexBlob + TEXT_INDEX_HEADER + INDEX_BYTES + SITE_BYTES;
+    {
+        uint32_t words[POOL_MAX * POOL_WORDS];
+        int n = PoolsToWords(words);
+        for (i = 0; i < (uint32_t)n; i++)
+            Wr32(p + i * 4, words[i]);
+        p += (uint32_t)n * 4;
+    }
+    {
+        uint32_t words[REGION_MAX * REGION_WORDS];
+        int n = RegionsToWords(words);
+        for (i = 0; i < (uint32_t)n; i++)
+            Wr32(p + i * 4, words[i]);
+    }
+    if (Platform_WriteFile(TEXT_INDEX_FILE, sIndexBlob, total) != 0)
+        Platform_Log("text: cannot write " TEXT_INDEX_FILE "\n");
+    else
+        Platform_Log("text: " TEXT_INDEX_FILE " written (%u bytes)\n", total);
+}
+
 static void BuildIndex(void)
 {
     uint32_t i, n = (uint32_t)gHostRomSize, strings = 0, sites = 0;
-    sIndex = (struct Entry *)calloc(1u << INDEX_BITS, sizeof(struct Entry));
-    sSites = (struct Entry *)calloc(1u << SITE_BITS, sizeof(struct Entry));
+    uint64_t t0 = Platform_TimeUs();
+    long got;
+    sIndexBlob = (unsigned char *)calloc(1, TEXT_INDEX_MAX);
     sCache = (struct Entry *)calloc(1u << CACHE_BITS, sizeof(struct Entry));
     sResults = (struct Entry *)calloc(1u << RESULT_BITS, sizeof(struct Entry));
-    if (!sIndex || !sSites || !sCache || !sResults) {
+    if (!sIndexBlob || !sCache || !sResults) {
         Platform_Log("text: no memory for the string index\n");
         sEnabled = 0;
         return;
     }
+    sIndex = (struct Entry *)(sIndexBlob + TEXT_INDEX_HEADER);
+    sSites = (struct Entry *)(sIndexBlob + TEXT_INDEX_HEADER + INDEX_BYTES);
+    got = Platform_ReadFile(TEXT_INDEX_FILE, sIndexBlob, TEXT_INDEX_MAX);
+    if (got > 0 && LoadIndexFile(got)) {
+        uint32_t pools, regions;
+        CountPoolsRegions(&pools, &regions);
+        Platform_Log("text: index from " TEXT_INDEX_FILE ": %u string entries, %u pointer entries, %u pools, %u regions, %u ms\n",
+                     sFill[0], sFill[1], pools, regions, (unsigned)((Platform_TimeUs() - t0) / 1000));
+        return;
+    }
+    if (got > 0) {
+        /* a stale file: start from empty tables */
+        memset(sIndexBlob, 0, TEXT_INDEX_MAX);
+        sFill[0] = sFill[1] = 0;
+    }
+    Platform_Log("text: building the string index\n");
     for (i = 1; i < n; i++) {
         long e;
         if (gHostRom[i] == 0 || !StringStart(i))
@@ -190,6 +358,8 @@ static void BuildIndex(void)
     BuildRegions();
     TLOG("pools built");
     PreferEnglishStrings();
+    Platform_Log("text: index built in %u ms\n", (unsigned)((Platform_TimeUs() - t0) / 1000));
+    SaveIndexFile();
 }
 
 static int HasSite(uint32_t off)
@@ -470,7 +640,6 @@ static long TableLookup(uint32_t r, int lang)
  * one pool per language with the entries in the same order. A pool is
  * recognised by its size and its language (common words). */
 #define POOL_MIN 20
-#define POOL_MAX 128
 
 struct Pool {
     uint32_t start, end, count;
@@ -672,7 +841,6 @@ static long PoolLookup(uint32_t r, int lang)
  * string pointers in the same order. Found from the pointer-headed pools,
  * merged across small gaps; the k-th string pointer of the English region
  * matches the k-th of the other language. */
-#define REGION_MAX 32
 #define REGION_GAP 0x1000
 
 struct Region {
@@ -681,6 +849,64 @@ struct Region {
 };
 static struct Region sRegions[REGION_MAX];
 static int sRegionCount;
+
+/* ---- pools and regions in the cache file ---- */
+
+static void CountPoolsRegions(uint32_t *pools, uint32_t *regions)
+{
+    *pools = (uint32_t)sPoolCount;
+    *regions = (uint32_t)sRegionCount;
+}
+
+static int PoolsToWords(uint32_t *w)
+{
+    int i, n = 0;
+    for (i = 0; i < sPoolCount; i++) {
+        w[n++] = sPools[i].start;
+        w[n++] = sPools[i].end;
+        w[n++] = sPools[i].count;
+        w[n++] = (uint32_t)sPools[i].lang;
+        w[n++] = (uint32_t)sPools[i].kind;
+    }
+    return n;
+}
+
+static int RegionsToWords(uint32_t *w)
+{
+    int i, n = 0;
+    for (i = 0; i < sRegionCount; i++) {
+        w[n++] = sRegions[i].start;
+        w[n++] = sRegions[i].end;
+        w[n++] = sRegions[i].count;
+        w[n++] = (uint32_t)sRegions[i].lang;
+    }
+    return n;
+}
+
+static void PoolsFromWords(const unsigned char *b, uint32_t n)
+{
+    uint32_t i;
+    sPoolCount = (int)n;
+    for (i = 0; i < n; i++) {
+        sPools[i].start = Rd32(b + (i * POOL_WORDS + 0) * 4);
+        sPools[i].end = Rd32(b + (i * POOL_WORDS + 1) * 4);
+        sPools[i].count = Rd32(b + (i * POOL_WORDS + 2) * 4);
+        sPools[i].lang = (int)(int32_t)Rd32(b + (i * POOL_WORDS + 3) * 4);
+        sPools[i].kind = (int)(int32_t)Rd32(b + (i * POOL_WORDS + 4) * 4);
+    }
+}
+
+static void RegionsFromWords(const unsigned char *b, uint32_t n)
+{
+    uint32_t i;
+    sRegionCount = (int)n;
+    for (i = 0; i < n; i++) {
+        sRegions[i].start = Rd32(b + (i * REGION_WORDS + 0) * 4);
+        sRegions[i].end = Rd32(b + (i * REGION_WORDS + 1) * 4);
+        sRegions[i].count = Rd32(b + (i * REGION_WORDS + 2) * 4);
+        sRegions[i].lang = (int)(int32_t)Rd32(b + (i * REGION_WORDS + 3) * 4);
+    }
+}
 
 /* A 4-aligned word pointing at a (possibly empty) string start. */
 static int SitePtr(uint32_t site, uint32_t *target)

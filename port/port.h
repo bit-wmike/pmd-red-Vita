@@ -45,6 +45,8 @@ int Port_RomVersion(const void *rom, size_t size);
  * resolves the pointers. Returns 0 on success. */
 int Port_LoadRom(unsigned char *rom, size_t size);
 void Port_Sha1(const void *data, size_t len, unsigned char out[20]);
+/* The SHA-1 of the loaded ROM (gHostRom), computed once and remembered. */
+void Port_RomSha1(unsigned char out[20]);
 /* Translates a GBA ROM address found inside unextracted data. */
 const void *Port_RomPtr(const void *p);
 

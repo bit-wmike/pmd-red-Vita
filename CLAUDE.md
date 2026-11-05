@@ -78,6 +78,8 @@ make -f Makefile.port TARGET=armhost -j4    # ARMv7, läuft unter qemu-arm (arm-
   /usr/include/asm`. Nie `pkill -f` mit einem Muster, das die eigene Shell trifft.
 - Makefile.port kennt keine Header-Abhängigkeiten: nach Änderungen an `CPPFLAGS`, `port/*.h`
   oder `port/ppu/include/*` das Build-Verzeichnis (`build/port-<target>`) löschen.
+- Agenten parallel: eigene Build-Verzeichnisse (`BUILD=build/agentX-<target>`), disjunkte Dateien; wenn
+  einer einen Header ändert, müssen alle anderen ihre Build-Verzeichnisse löschen.
 - **Vita-GCC 15 ist strenger** → vor jeder Version `TARGET=vita` bauen. Der Präprozessor-Schritt
   braucht `-std=gnu11` (sonst `nullptr`-Fehler aus `stddef.h`).
 
@@ -95,7 +97,7 @@ Schalter: `PMD_SHOT=f1,f2` / `PMD_SHOT_EVERY=n` (PPM), `PMD_VIEW=0/1/2`, `PMD_WA
   PPMs** (`cmp`); (2) Renderer-Änderungen Bild für Bild gegen die alte Version vergleichen;
   (3) Vita-Build ohne Fehler.
 
-## Stand (0.1.13, 05.11.2026)
+## Stand (0.1.14, 05.11.2026)
 - 0.1.12 (Mikes `run4`, 0.1.11: Absturz vor dem ersten Dungeon, Titel/Gesundheitshinweis englisch bzw.
   „fehlerhaft“, Tastatur-Müll bei der Namensgebung, Traumtext nicht zentriert): (1) **Absturz**: `lvmp001`
   (Levelkurve, AT-gepackt, 616-Byte-Block mit SIRO-Kopf) wird aus der EU-ROM genommen; `Port_ChooseFile`
@@ -119,6 +121,21 @@ Schalter: `PMD_SHOT=f1,f2` / `PMD_SHOT_EVERY=n` (PPM), `PMD_VIEW=0/1/2`, `PMD_WA
   UI-Ebene (BG0 mit eigenem dx) – Rücksprache mit Mike. `UniformMap` (einfarbige Karten → Bild mittig) ist
   drin, greift hier aber nicht (Karte hat echte Kacheln).
   (6) `vita.sh fetch` holt jetzt auch `pmd_red.sav`.
+- 0.1.14 (zwei Agenten): (1) **Startzeit-Caches**: `romindex.txt` hat Kopf `pmdidx 2 <TableHash> <ROM-SHA-1>`
+  (FNV-64 über die Blocktabelle statt Versionsnummer → neue Version ohne Datenänderung nutzt den Cache);
+  nicht gefundene Blöcke stehen als `name -` drin (`absent`, sonst 5 Scan-Pässe pro Start für 765 Blöcke).
+  `textindex.bin` (port_text.c, ~10,5 MiB, Header `TIDX`, Format 1, SHA-1; sIndex/sSites/Pools/Regionen in
+  einem Block `sIndexBlob`, direkt eingelesen) ersetzt den Indexbau; **`TEXT_INDEX_FORMAT` erhöhen**, wenn
+  BuildIndex/BuildPools/BuildRegions/PreferEnglishStrings oder Tabellengrößen geändert werden. x86 warm:
+  Assets 181 ms, Textindex 5 ms (vorher 2300/400). Host-Pfade: `<ausgabeordner>/romindex.txt`, Vita
+  `ux0:data/pmd/`. `Port_RomSha1()` (port.h). Bekannt: Host-Zeiger, die `Port_RelocateRomFile` in `gHostRom`
+  schreibt, landen als „Strings“ im Index (≈340 Einträge, heap-abhängig, wirkungslos).
+  (2) **Rahmen um das Spielbild** (main_vita.c, Menü „Rahmen um das Spielbild“, ini `frame` 0/1/2, Standard 1
+  = Artwork): LiveArea-bg abgedunkelt (Tint 100/255) hinter dem Spielbild bzw. 9-Slice-Bezel
+  (`platform/vita/assets/bezel.png` aus `tools/make_bezel.py`); vita2d der VitaSDK hat keinen PNG-Lader →
+  `tools/png2raw.py` macht beim VPK-Bau `assets/bg.raw` (480×272) und `assets/bezel.raw` (Kopf `PRAW`,w,h).
+  Nur sichtbar, wenn das Spielbild Ränder hat (Pixelgenau, GBA-Ansicht). Nicht auf der Vita getestet.
+  `struct PortConfig` hat ein neues Feld `frame` → alle Build-Verzeichnisse frisch gebaut.
 - 0.1.13: **LiveArea-Hintergrund grau** (Mikes Screenshot): `stamp_version.py` schrieb bg/startup als
   32-Bit-RGBA-PNG; die Vita zeigt in der LiveArea nur 8-Bit-Paletten-PNGs (sonst graue Seite). Jetzt
   Quantisierung auf 256 Farben beim Stempeln. Regel: alle sce_sys-PNGs müssen Modus `P` haben.
