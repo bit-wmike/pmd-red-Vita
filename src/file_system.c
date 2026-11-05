@@ -76,8 +76,13 @@ static const File *Port_ChooseFile(const File *file, s32 cursor)
      * one pointer. */
     if (contentHoles > 0 || holes > ((d[0] == 'S' && d[1] == 'I' && d[2] == 'R' && d[3] == 'O') ? 1u : 0u)) {
         unsigned filled = 0, size = Port_RomFileSize(file->name);
-        Port_RelocateRomFile(rom, size);
-        if (contentHoles > 0 && rom[0] == 'S' && rom[1] == 'I' && rom[2] == 'R' && rom[3] == 'O') {
+        int first = Port_RomFileCopy(file->name) == NULL;
+        rom = Port_RelocateRomFile(file->name, size);
+        if (rom == NULL)
+            return file;
+        if (!first)
+            ; /* pointer fields were filled when the copy was made */
+        else if (contentHoles > 0 && rom[0] == 'S' && rom[1] == 'I' && rom[2] == 'R' && rom[3] == 'O') {
             /* the content lies behind the header in both; the port's copy
              * may keep other data between (the US item table does) */
             const unsigned char *portContent = (const unsigned char *)((const SiroArchive *)d)->data;
@@ -89,8 +94,11 @@ static const File *Port_ChooseFile(const File *file, s32 cursor)
         }
         if (filled)
             Platform_Log("file: %s: %u empty pointer fields filled from the port's copy\n", file->name, filled);
-    } else if (rom[0] == 'S' && rom[1] == 'I' && rom[2] == 'R' && rom[3] == 'O')
-        Port_RelocateRomFile(rom, 16); /* just the header */
+    } else if (rom[0] == 'S' && rom[1] == 'I' && rom[2] == 'R' && rom[3] == 'O') {
+        rom = Port_RelocateRomFile(file->name, 16); /* just the header */
+        if (rom == NULL)
+            return file;
+    }
     Platform_Log("file: %s taken from the user's ROM (state %d, %u bytes, pointers in the port's copy %u/%u)\n",
                  file->name, state, Port_RomFileSize(file->name), holes, contentHoles);
     sPortFiles[cursor].name = file->name;

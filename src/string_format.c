@@ -1,6 +1,8 @@
 #ifdef PORT
 #include "../port/port_text.h"
 #include "port/port_comfort.h"
+#else
+#define PORT_BLINK_MASK 8
 #endif
 #include "global.h"
 #include "globaldata.h"
@@ -483,7 +485,7 @@ void DrawDialogueBoxString_Async(void)
 
                 if (!buttonPress) {
                     sArrowFrames++;
-                    if (!(sStringFormatFlags & STR_FORMAT_FLAG_TIMED_AUTO_MSG_CLOSE) && sArrowFrames & 8) {
+                    if (!(sStringFormatFlags & STR_FORMAT_FLAG_TIMED_AUTO_MSG_CLOSE) && sArrowFrames & PORT_BLINK_MASK) {
                         SpriteSetAffine1(&sDialogueBoxArrowSprite, 0);
                         SpriteSetAffine2(&sDialogueBoxArrowSprite, 0);
                         SpriteSetObjMode(&sDialogueBoxArrowSprite, 0);

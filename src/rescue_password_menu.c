@@ -17,6 +17,11 @@
 #include "string_format.h"
 #include "text_1.h"
 #include "naming_screen.h"
+#ifdef PORT
+#include "port/port_comfort.h"
+#else
+#define PORT_BLINK_MASK 8
+#endif
 
 #define RESCUE_PASSWORD_SIZE 0x36
 
@@ -697,7 +702,7 @@ void sub_80391F8(void)
     SpriteSetX(&gRescuePasswordMenu->unk208, 112);
     SpriteSetY(&gRescuePasswordMenu->unk208, 112);
 
-    if (gRescuePasswordMenu->unk210 & 8)
+    if (gRescuePasswordMenu->unk210 & PORT_BLINK_MASK)
         AddSprite(&gRescuePasswordMenu->unk208, 0x100, NULL, NULL);
 
     DrawDialogueBoxString_Async();

@@ -35,6 +35,11 @@
 #include "trap.h"
 #include "dungeon_submenu.h"
 #include "dungeon_engine.h"
+#ifdef PORT
+#include "port/port_comfort.h"
+#else
+#define PORT_BLINK_MASK 8
+#endif
 
 static EWRAM_DATA WindowHeader sReleaseMenuWinHeader = {0};
 static EWRAM_DATA s32 gUnknown_202F30C = 0;
@@ -523,7 +528,7 @@ static void sub_8068310(s32 n, Pokemon **monPtrs)
 // Identical to the functions in dungeon_menu_team.c
 static void ShowUpArrowSprite(void)
 {
-    if ((gDungeonFramesCounter & 8) != 0) {
+    if ((gDungeonFramesCounter & PORT_BLINK_MASK) != 0) {
         Window *window = &gWindows[0];
         SpriteOAM sprite = {0};
 
@@ -546,7 +551,7 @@ static void ShowUpArrowSprite(void)
 
 static void ShowDownArrowSprite(void)
 {
-    if ((gDungeonFramesCounter & 8) != 0) {
+    if ((gDungeonFramesCounter & PORT_BLINK_MASK) != 0) {
         Window *window = &gWindows[0];
         SpriteOAM sprite = {0};
 

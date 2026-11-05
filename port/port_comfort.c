@@ -14,6 +14,11 @@ int Port_TextAutoFrames(void)
     return gPortConfig.textAuto ? 20 : 0;
 }
 
+int Port_BlinkMask(void)
+{
+    return gPortConfig.slowBlink ? 16 : 8;
+}
+
 int Port_WalkFast(void)
 {
     return gPortConfig.walkFast != 0;

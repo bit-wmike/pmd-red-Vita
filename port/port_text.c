@@ -22,6 +22,7 @@
 #include "port_config.h"
 #include "port_text.h"
 #include "port_game.h"
+#include "port_assets.h"
 #ifdef TEXT_TIMING
 #include <time.h>
 #define TLOG(what) Platform_Log("text: %s at %.2f s\n", what, (double)clock() / CLOCKS_PER_SEC)
@@ -173,7 +174,7 @@ static void PreferEnglishStrings(void);
  * sizes or the string rules above). */
 #define TEXT_INDEX_FILE "textindex.bin"
 #define TEXT_INDEX_MAGIC 0x58444954u /* "TIDX" */
-#define TEXT_INDEX_FORMAT 1
+#define TEXT_INDEX_FORMAT 2
 #define TEXT_INDEX_HEADER 64
 
 struct TextIndexHeader {
@@ -1137,6 +1138,13 @@ const unsigned char *Port_Text(const unsigned char *s)
     }
     if (!sEnabled)
         return s;
+    {
+        /* strings of ROM files the port copied to relocate their pointers
+         * (talk files): looked up at their place in the ROM image */
+        const unsigned char *inRom = Port_RomCopyToRom(s);
+        if (inRom)
+            s = inRom;
+    }
     if (lang != sCacheLang) {
         memset(sCache, 0, sizeof(struct Entry) << CACHE_BITS);
         sFill[2] = 0;

@@ -36,6 +36,7 @@ struct PortConfig {
     int language;        /* PORT_LANG_*: -1 = not chosen yet (European ROM only) */
     /* comfort (all optional, port menu) */
     int textInstant;     /* 0/1: text boxes show their text at once */
+    int slowBlink;       /* 0/1: cursors and text arrows blink at half the speed */
     int textAuto;        /* 0/1: holding A advances text boxes */
     int dungeonSpeed;    /* 0 normal, 1 x1.5, 2 x2: moves and enemy turns in dungeons */
     int walkFast;        /* 0/1: faster walking in the town and base */

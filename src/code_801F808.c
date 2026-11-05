@@ -11,6 +11,11 @@
 #include "string_format.h"
 #include "text_1.h"
 #include "text_2.h"
+#ifdef PORT
+#include "port/port_comfort.h"
+#else
+#define PORT_BLINK_MASK 8
+#endif
 
 // TODO: UNIFY WITH MenuWindow
 struct unkStruct_203B278
@@ -156,7 +161,7 @@ static void sub_801FA58(void)
 {
     if(gUnknown_203B278->unk10 != 0)
     {
-        if(gUnknown_203B278->unk24 & 8)
+        if(gUnknown_203B278->unk24 & PORT_BLINK_MASK)
         {
             sub_8013F84();
         }
@@ -192,7 +197,7 @@ static void sub_801FAD4(void)
 {
     if(gUnknown_203B278->unkC < gUnknown_203B278->unk10 - 1)
     {
-        if(gUnknown_203B278->unk24 & 8)
+        if(gUnknown_203B278->unk24 & PORT_BLINK_MASK)
         {
             sub_8013F84();
         }

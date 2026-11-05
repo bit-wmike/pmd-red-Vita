@@ -10,6 +10,11 @@ int Port_TextInstant(void);
 /* A text box waiting for a button goes on by itself while A is held for
  * this many frames (settings.ini text_auto); 0 = never. */
 int Port_TextAutoFrames(void);
+/* Blinking cursors and text arrows: the game shows them while
+ * (frame counter & 8), a 16-frame cycle; slow_blink (default on) doubles
+ * it. Use as `counter & PORT_BLINK_MASK`. */
+int Port_BlinkMask(void);
+#define PORT_BLINK_MASK (Port_BlinkMask())
 /* The player runs in ground scenes (settings.ini walk_fast). */
 int Port_WalkFast(void);
 

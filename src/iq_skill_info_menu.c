@@ -16,6 +16,11 @@
 static EWRAM_INIT struct IQSkillInfoMenu *sIQSkillInfoMenu = {NULL};
 
 #include "data/iq_skill_info_menu.h"
+#ifdef PORT
+#include "port/port_comfort.h"
+#else
+#define PORT_BLINK_MASK 8
+#endif
 
 static void SetIQSkillInfoMenuState(s32 newState);
 static void sub_801C6E4(void);
@@ -108,7 +113,7 @@ static void sub_801C6E4(void)
 static void sub_801C7D4(void)
 {
     if (sIQSkillInfoMenu->unkC != 0) {
-        if (sIQSkillInfoMenu->unk20 & 8)
+        if (sIQSkillInfoMenu->unk20 & PORT_BLINK_MASK)
             sub_8013F84();
 
         sIQSkillInfoMenu->unk20++;
@@ -135,7 +140,7 @@ static void sub_801C7D4(void)
 static void sub_801C848(void)
 {
     if (sIQSkillInfoMenu->unk8 < sIQSkillInfoMenu->unkC - 1) {
-        if (sIQSkillInfoMenu->unk20 & 8)
+        if (sIQSkillInfoMenu->unk20 & PORT_BLINK_MASK)
             sub_8013F84();
 
         sIQSkillInfoMenu->unk20++;

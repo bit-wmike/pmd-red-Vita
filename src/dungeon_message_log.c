@@ -13,6 +13,11 @@
 #include "sprite.h"
 #include "dungeon_tilemap.h"
 #include "run_dungeon.h"
+#ifdef PORT
+#include "port/port_comfort.h"
+#else
+#define PORT_BLINK_MASK 8
+#endif
 
 #define MESSAGE_LOG_ROW_COUNT 8 // How many log messages are shown
 
@@ -267,7 +272,7 @@ static bool8 TryScrollLogDown(s32 touchScreenArrow)
 static void CreateMessageLogArrow(bool8 upArrow, s32 y)
 {
     Window *window = &gWindows[0];
-    if (!(gDungeonFramesCounter & 8)) {
+    if (!(gDungeonFramesCounter & PORT_BLINK_MASK)) {
         SpriteSetAffine1(&sMessageLogArrowSpriteOAM, 0);
         SpriteSetAffine2(&sMessageLogArrowSpriteOAM, 0);
         SpriteSetObjMode(&sMessageLogArrowSpriteOAM, 0);

@@ -880,6 +880,7 @@ struct RomFile {
     uint32_t dataOff;
     uint32_t size;
     uint32_t relocated;
+    unsigned char *copy; /* relocated copy on the heap, or NULL */
 };
 static struct RomFile *sRomFiles;
 static size_t sRomFileCount;
@@ -945,6 +946,7 @@ static void IndexRomArchives(void)
             j = lo; /* first offset above o */
             sRomFiles[i].size = (j <= sRomFileCount ? offs[j] : (uint32_t)gHostRomSize) - o;
             sRomFiles[i].relocated = 0;
+            sRomFiles[i].copy = NULL;
         }
         free(offs);
     }
@@ -980,33 +982,72 @@ unsigned Port_RomFileSize(const char *name)
     return f ? f->size : 0;
 }
 
-void Port_RelocateRomFile(const unsigned char *data, unsigned size)
+/* Files whose pointers the port rewrites are copied to the heap first: the
+ * ROM image must keep its GBA pointers, the text lookups (port_text.c) read
+ * the pointer tables of the archives (a relocated talk file made the
+ * leader's level-up line untranslatable). */
+static struct RomFile *sCopied[512];
+static unsigned sCopiedCount, sCopiedBytes;
+
+unsigned char *Port_RelocateRomFile(const char *name, unsigned limit)
 {
-    uint32_t off = (uint32_t)(data - gHostRom), i, n = 0;
-    struct RomFile *f = NULL;
-    size_t k;
-    for (k = 0; k < sRomFileCount; k++)
-        if (sRomFiles[k].dataOff == off) {
-            f = &sRomFiles[k];
-            break;
-        }
-    if (f && f->relocated)
-        return;
-    if (f)
-        f->relocated = 1;
+    struct RomFile *f = FindRomFile(name);
+    uint32_t off, i, n = 0;
+    unsigned char *copy;
+    if (f == NULL)
+        return NULL;
+    if (f->relocated)
+        return f->copy;
+    copy = (unsigned char *)malloc(f->size ? f->size : 1);
+    if (copy == NULL || sCopiedCount >= sizeof(sCopied) / sizeof(sCopied[0])) {
+        free(copy);
+        Platform_Log("file: no memory for a copy of %s\n", name);
+        return NULL;
+    }
+    off = f->dataOff;
+    memcpy(copy, gHostRom + off, f->size);
+    if (limit > f->size)
+        limit = f->size;
     /* only pointers into the file itself: the archives' files point at
      * their own parts (tables, frames); a word of image data that happens
      * to look like a ROM address points elsewhere (portraits kao***) */
-    for (i = 0; i + 4 <= size; i += 4) {
+    for (i = 0; i + 4 <= limit; i += 4) {
         uint32_t v;
-        memcpy(&v, data + i, 4);
-        if (v >= 0x08000000u + off && v < 0x08000000u + off + (f ? f->size : size)) {
-            const void *host = gHostRom + (v - 0x08000000u);
-            memcpy((unsigned char *)data + i, &host, 4);
+        memcpy(&v, copy + i, 4);
+        if (v >= 0x08000000u + off && v < 0x08000000u + off + f->size) {
+            const void *host = copy + (v - 0x08000000u - off);
+            memcpy(copy + i, &host, 4);
             n++;
         }
     }
-    Platform_Log("file: %u pointers translated in a file of the user's ROM\n", n);
+    f->copy = copy;
+    f->relocated = 1;
+    sCopied[sCopiedCount++] = f;
+    sCopiedBytes += f->size;
+    Platform_Log("file: %s: %u pointers translated in a copy (%u bytes, %u in all)\n", name, n, f->size,
+                 sCopiedBytes);
+    return copy;
+}
+
+/* The relocated copy of a file, NULL before Port_RelocateRomFile made it. */
+const unsigned char *Port_RomFileCopy(const char *name)
+{
+    struct RomFile *f = FindRomFile(name);
+    return f ? f->copy : NULL;
+}
+
+/* A pointer into one of those copies as the same place in the ROM image
+ * (strings of copied files: the text lookups work on ROM offsets), else
+ * NULL. */
+const unsigned char *Port_RomCopyToRom(const unsigned char *p)
+{
+    unsigned i;
+    for (i = 0; i < sCopiedCount; i++) {
+        const struct RomFile *f = sCopied[i];
+        if (p >= f->copy && p < f->copy + f->size)
+            return gHostRom + f->dataOff + (p - f->copy);
+    }
+    return NULL;
 }
 
 /* The European ROM stores the ground tilesets (*.bpc) packed; the US code

@@ -8,6 +8,11 @@
 #include "sprite.h"
 #include "text_1.h"
 #include "unk_menu_203B360.h"
+#ifdef PORT
+#include "port/port_comfort.h"
+#else
+#define PORT_BLINK_MASK 8
+#endif
 
 // Size: 0x1B4. Similar to SaveMenuWork
 typedef struct unkStruct_203B360
@@ -149,7 +154,7 @@ void sub_8038440(void)
 
 static void sub_80384D0(void)
 {
-  if ((sUnknown_203B360->unk1B0 & 8) != 0) {
+  if ((sUnknown_203B360->unk1B0 & PORT_BLINK_MASK) != 0) {
     AddSprite(&sUnknown_203B360->unk1A8, 0x100, NULL, NULL);
   }
   sUnknown_203B360->unk1B0++;

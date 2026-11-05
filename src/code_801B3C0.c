@@ -14,6 +14,11 @@
 static EWRAM_INIT unkStruct_203B230 *sUnknown_203B230 = { NULL };
 
 #include "data/code_801B3C0.h"
+#ifdef PORT
+#include "port/port_comfort.h"
+#else
+#define PORT_BLINK_MASK 8
+#endif
 
 static void sub_801B46C(u32);
 static void sub_801B480(void);
@@ -97,7 +102,7 @@ static void sub_801B480(void)
 static void sub_801B51C(void)
 {
     if (sUnknown_203B230->unkC != 0) {
-        if (sUnknown_203B230->unk20 & 8)
+        if (sUnknown_203B230->unk20 & PORT_BLINK_MASK)
             sub_8013F84();
 
         sUnknown_203B230->unk20++;
@@ -126,7 +131,7 @@ static void sub_801B51C(void)
 static void sub_801B590(void)
 {
     if (sUnknown_203B230->unk8 < (sUnknown_203B230->unkC - 1)) {
-        if (sUnknown_203B230->unk20 & 8)
+        if (sUnknown_203B230->unk20 & PORT_BLINK_MASK)
             sub_8013F84();
 
         sUnknown_203B230->unk20++;

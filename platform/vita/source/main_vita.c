@@ -510,7 +510,7 @@ static void ChooseLanguage(void)
 enum {
     MI_H_DISPLAY, MI_STYLE, MI_FRAME, MI_FPS, MI_LANG,
     MI_H_CONTROLS, MI_SQUARE, MI_TRIANGLE, MI_RSTICK, MI_TURBO,
-    MI_H_COMFORT, MI_TEXT_INSTANT, MI_TEXT_AUTO, MI_DSPEED, MI_WALK, MI_AUTOSAVE, MI_HPBARS, MI_CLOCK,
+    MI_H_COMFORT, MI_TEXT_INSTANT, MI_TEXT_AUTO, MI_BLINK, MI_DSPEED, MI_WALK, MI_AUTOSAVE, MI_HPBARS, MI_CLOCK,
     MI_H_SAVE, MI_QSAVE, MI_QLOAD,
     MI_H_CHEATS, MI_CH_EXP, MI_CH_MONEY, MI_CH_IQ, MI_CH_RECRUIT, MI_CH_STAIRS, MI_CH_HUNGER,
     MI_CH_ATK, MI_CH_DEF, MI_CH_SPATK, MI_CH_SPDEF, MI_CH_SPEED,
@@ -563,6 +563,7 @@ static void MenuLine(int item, char *buf, size_t size)
         case MI_H_COMFORT: snprintf(buf, size, "-- Komfort --"); break;
         case MI_TEXT_INSTANT: snprintf(buf, size, "Text sofort komplett anzeigen: %s", OnOff(gPortConfig.textInstant)); break;
         case MI_TEXT_AUTO: snprintf(buf, size, "A halten blaettert Text weiter: %s", OnOff(gPortConfig.textAuto)); break;
+        case MI_BLINK: snprintf(buf, size, "Cursor blinken langsamer: %s", OnOff(gPortConfig.slowBlink)); break;
         case MI_DSPEED: snprintf(buf, size, "Dungeon-Tempo (Bewegung, Gegnerzuege): %s", speeds[gPortConfig.dungeonSpeed]); break;
         case MI_WALK: snprintf(buf, size, "Schneller laufen in Basis und Stadt: %s", OnOff(gPortConfig.walkFast)); break;
         case MI_AUTOSAVE: snprintf(buf, size, "Schnellspeichern bei jedem Etagenwechsel: %s", OnOff(gPortConfig.floorAutosave)); break;
@@ -616,6 +617,7 @@ static int MenuChange(int item, int d)
         case MI_TURBO: gPortConfig.turbo ^= 1; break;
         case MI_TEXT_INSTANT: gPortConfig.textInstant ^= 1; break;
         case MI_TEXT_AUTO: gPortConfig.textAuto ^= 1; break;
+        case MI_BLINK: gPortConfig.slowBlink ^= 1; break;
         case MI_DSPEED: gPortConfig.dungeonSpeed = Wrap(gPortConfig.dungeonSpeed, step, 3); break;
         case MI_WALK: gPortConfig.walkFast ^= 1; break;
         case MI_AUTOSAVE: gPortConfig.floorAutosave ^= 1; break;

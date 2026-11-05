@@ -55,11 +55,15 @@ const unsigned char *Port_RomFile(const char *name);
 /* A tileset file (*c) of the user's ROM, unpacked when it is packed. */
 const unsigned char *Port_RomTilesetFile(const char *name);
 unsigned Port_RomFileSize(const char *name);
-/* Translates every 4-aligned word of the file that looks like a GBA ROM
- * address into a host pointer (once per file). For files of another ROM
- * version that carry pointers (charmaps, parameter tables). */
 unsigned Port_FillPointerFields(const unsigned char *portCopy, unsigned char *romCopy, unsigned size);
-void Port_RelocateRomFile(const unsigned char *data, unsigned size);
+/* A heap copy of a file of the user's ROM in which every 4-aligned word of
+ * the first `limit` bytes that points into the file is a host pointer into
+ * the copy (once per file; the ROM image keeps its GBA pointers). For files
+ * of another ROM version that carry pointers (charmaps, parameter tables). */
+unsigned char *Port_RelocateRomFile(const char *name, unsigned limit);
+const unsigned char *Port_RomFileCopy(const char *name);
+/* A pointer into such a copy as the same place in the ROM image, else NULL. */
+const unsigned char *Port_RomCopyToRom(const unsigned char *p);
 /* How the port got the data block that contains `p`: 0 unknown, 1 exact,
  * 2 partial, 4 embedded fallback, -1 not found. `holes` receives the number
  * of pointer slots of that block. */

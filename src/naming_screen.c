@@ -15,6 +15,11 @@
 #include "text_util.h"
 #include "constants/input.h"
 #include "constants/colors.h"
+#ifdef PORT
+#include "port/port_comfort.h"
+#else
+#define PORT_BLINK_MASK 8
+#endif
 
 #define MAX_TEXT_SIZE 54
 
@@ -441,13 +446,13 @@ u32 NamingScreen_HandleInput(void)
 {
     sNamingScreen->letterCursorFrames++;
     SetLetterCursorSpritePosition();
-    if (sNamingScreen->letterCursorFrames & 8) {
+    if (sNamingScreen->letterCursorFrames & PORT_BLINK_MASK) {
         AddSprite((SpriteOAM *) &sNamingScreen->spriteLetterCursor, 0x100, NULL, NULL);
     }
 
     sNamingScreen->inputCursorFrames++;
     HandleInputCursor();
-    if (sNamingScreen->inputCursorFrames & 8) {
+    if (sNamingScreen->inputCursorFrames & PORT_BLINK_MASK) {
         AddSprite((SpriteOAM *) &sNamingScreen->spriteInputCursor, 0x100, NULL, NULL);
     }
 

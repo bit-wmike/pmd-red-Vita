@@ -99,7 +99,7 @@ Schalter: `PMD_SHOT=f1,f2` / `PMD_SHOT_EVERY=n` (PPM), `PMD_VIEW=0/1/2`, `PMD_WA
   PPMs** (`cmp`); (2) Renderer-Änderungen Bild für Bild gegen die alte Version vergleichen;
   (3) Vita-Build ohne Fehler.
 
-## Stand (0.1.18, 05.11.2026)
+## Stand (0.1.19, 05.11.2026)
 - 0.1.12 (Mikes `run4`, 0.1.11: Absturz vor dem ersten Dungeon, Titel/Gesundheitshinweis englisch bzw.
   „fehlerhaft“, Tastatur-Müll bei der Namensgebung, Traumtext nicht zentriert): (1) **Absturz**: `lvmp001`
   (Levelkurve, AT-gepackt, 616-Byte-Block mit SIRO-Kopf) wird aus der EU-ROM genommen; `Port_ChooseFile`
@@ -123,6 +123,23 @@ Schalter: `PMD_SHOT=f1,f2` / `PMD_SHOT_EVERY=n` (PPM), `PMD_VIEW=0/1/2`, `PMD_WA
   UI-Ebene (BG0 mit eigenem dx) – Rücksprache mit Mike. `UniformMap` (einfarbige Karten → Bild mittig) ist
   drin, greift hier aber nicht (Karte hat echte Kacheln).
   (6) `vita.sh fetch` holt jetzt auch `pmd_red.sav`.
+- 0.1.19 (Mikes `run7`, gespielt mit 0.1.17: Absturz nach dem Brief = Weltkarten-Absturz, in 0.1.18 behoben – Crumbs
+  `op af/a9/04/ef` + `wmp2cani` wie reproduziert; Level-up-Zeile des Spielers englisch; Textbox im Haus unten mit
+  schwarzem Streifen; gelbes Quadrat links unter der Quiz-Textbox; Cursor blinken zu schnell; hohe CPU-Last):
+  (1) **ROM-Dateien mit Zeigern werden kopiert** (`Port_RelocateRomFile(name, limit)` → Heap-Kopie, `Port_RomFileCopy`,
+  `Port_RomCopyToRom`): vorher schrieb der Port Host-Zeiger direkt in `gHostRom`; die Textsuche (Tabellen über
+  Zeigerläufe) fand danach z. B. `talk28` (Hydropi: „Yay! Look~2c I leveled up!“) nicht mehr. `Port_Text` bildet Zeiger in
+  Kopien auf die ROM-Stelle ab. `TEXT_INDEX_FORMAT` 2 (alte Indizes waren aus einem veränderten ROM-Abbild gebaut).
+  Reproduktion: Arten-ID in `sub_806A3D4` erzwingen (283 = Hydropi). (2) **Fenster/HDMA an der UI-Lage**
+  (`win_dx/dy`, `line_dy` = `sUiDx/sUiDy`): die Textbox-Form kommt aus WIN0H/WIN1H pro Zeile (HBlank-DMA,
+  `gWinBufferPtr`), BG1 (Boxfüllung) nur innerhalb; mit der Welt-Verschiebung fehlte die Füllung, sobald die Kamera am
+  Kartenrand stand (Haus-Ausgang, Traumszene ganz schwarz). (3) UI-Sprites komplett außerhalb des GBA-Bildes werden
+  außerhalb von Dungeons nicht gezeichnet (`UiSpriteOffScreen`; geparkter Cursor bei y 160 = gelbes Quadrat). Im
+  Dungeon gehen viele Welt-Sprites (Schatten, Items) über `AddSprite` → dort keine Kappung. (4) `slow_blink`
+  (Standard 1, Menü „Cursor blinken langsamer“): `PORT_BLINK_MASK` (16 statt 8) an allen `& 8`-Blinkstellen (Textpfeil,
+  Menücursor, Tastatur, Dungeon-Menüs). Das Original blinkt mit 8. (5) Vita-Schnellspeicherungen lassen sich auf dem Host nicht
+  laden (Vita-Zeiger, andere Abschnittsgrößen). Mikes `run7/pmd_red.sav` startet morgens im Haus (Hydropi/Flemmli); Skript-
+  Präfix `save_run6_letter_go.txt` bis Bild 7600 lädt ihn (Ja/Nein steht auf „Nein“, das Skript braucht ~6000 Bilder).
 - 0.1.18 (Agent reproduzierte aus Mikes `run6/pmd_red.sav`: Brief → „Okay! Los!“ → **Weltkarte stürzt ab**,
   in 0.1.16 und 0.1.17 an verschiedenen Stellen; Skripte `platform/host/scripts/save_run6_letter_*.txt`, Spielstand
   in den Ausgabeordner kopieren). Mikes eigener Absturz kurz davor (nach „Hä? Wieso nicht?“) war auf dem Host nicht

@@ -45,6 +45,11 @@
 #include "string_format.h"
 #include "text_2.h"
 #include "weather.h"
+#ifdef PORT
+#include "port/port_comfort.h"
+#else
+#define PORT_BLINK_MASK 8
+#endif
 
 EWRAM_DATA s32 gTeamMenuChosenId = 0;
 static UNUSED EWRAM_DATA u8 sUnused[4] = {0};
@@ -1086,7 +1091,7 @@ void ShowDungeonSummaryOrIQMenu(ActionContainer *a0, bool8 showIq)
 // The same as sub_8068344
 static void ShowUpArrowSprite(void)
 {
-    if ((gDungeonFramesCounter & 8) != 0) {
+    if ((gDungeonFramesCounter & PORT_BLINK_MASK) != 0) {
         Window *window = &gWindows[0];
         SpriteOAM sprite = {0};
 
@@ -1111,7 +1116,7 @@ static void ShowUpArrowSprite(void)
 // The same as sub_80684C4
 static void ShowDownArrowSprite(void)
 {
-    if ((gDungeonFramesCounter & 8) != 0) {
+    if ((gDungeonFramesCounter & PORT_BLINK_MASK) != 0) {
         Window *window = &gWindows[0];
         SpriteOAM sprite = {0};
 
@@ -1134,7 +1139,7 @@ static void ShowDownArrowSprite(void)
 
 void ShowStatusDescriptionMenuArrow(void)
 {
-    if ((gDungeonFramesCounter & 8) != 0) {
+    if ((gDungeonFramesCounter & PORT_BLINK_MASK) != 0) {
         Window *window = &gWindows[0];
 
         SpriteSetAffine1(&sOAMStatusDescriptionArrow, 0);

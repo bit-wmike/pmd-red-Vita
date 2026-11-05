@@ -21,6 +21,11 @@
 #include "dungeon_engine.h"
 #include "dungeon_cutscene.h"
 #include "dungeon_mon_recruit.h"
+#ifdef PORT
+#include "port/port_comfort.h"
+#else
+#define PORT_BLINK_MASK 8
+#endif
 
 struct MonRecruitList
 {
@@ -251,7 +256,7 @@ static bool8 TryScrollDown(struct MonRecruitList *tabData, s32 touchScreenArrow)
 static void CreateScrollingArrow(bool8 upArrow, s32 y)
 {
     Window *window = &gWindows[0];
-    if (!(gDungeonFramesCounter & 8)) {
+    if (!(gDungeonFramesCounter & PORT_BLINK_MASK)) {
         SpriteSetAffine1(&sScrollingArrowOAM, 0);
         SpriteSetAffine2(&sScrollingArrowOAM, 0);
         SpriteSetObjMode(&sScrollingArrowOAM, 0);

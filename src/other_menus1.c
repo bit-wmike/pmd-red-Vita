@@ -22,6 +22,11 @@
 static EWRAM_INIT unkStruct_203B35C *sUnknown_203B35C = {NULL};
 
 #include "data/other_menus1.h"
+#ifdef PORT
+#include "port/port_comfort.h"
+#else
+#define PORT_BLINK_MASK 8
+#endif
 
 static void sub_80371B8(void);
 static void sub_8037400(void);
@@ -351,7 +356,7 @@ static void sub_8037748(void)
     SpriteSetX(&sUnknown_203B35C->unkC, 112);
     SpriteSetY(&sUnknown_203B35C->unkC, 104);
 
-    if ((sUnknown_203B35C->unk14 & 8) != 0)
+    if ((sUnknown_203B35C->unk14 & PORT_BLINK_MASK) != 0)
       AddSprite(&sUnknown_203B35C->unkC, 0x100, NULL, NULL);
 
     DrawDialogueBoxString_Async();

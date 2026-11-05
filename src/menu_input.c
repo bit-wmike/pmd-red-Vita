@@ -17,6 +17,11 @@
 #include "bg_palette_buffer.h"
 #include "game_options.h"
 #include "window_buffer.h"
+#ifdef PORT
+#include "port/port_comfort.h"
+#else
+#define PORT_BLINK_MASK 8
+#endif
 
 const u32 gDefaultMenuTextColors[3] = { COLOR_WHITE_2, COLOR_RED, COLOR_RED };
 
@@ -569,7 +574,7 @@ void AddMenuCursorSprite_(MenuInputStruct *menuInput, u8 *a1)
     if (menuInput->currPageEntries > 0) {
         UpdateMenuCursorSpriteCoords(menuInput);
 
-        if (!(menuInput->unk24 & 8)) {
+        if (!(menuInput->unk24 & PORT_BLINK_MASK)) {
             SpriteSetAffine1(&sp, 0);
             SpriteSetAffine2(&sp, 0);
             SpriteSetObjMode(&sp, 0);
@@ -1003,7 +1008,7 @@ u32 sub_8013BBC(unkStructFor8013AA0 *a0)
 
     sub_8013D10(a0);
 
-    if (a0->unk26 & 8) {
+    if (a0->unk26 & PORT_BLINK_MASK) {
         SpriteSetMatrixNum(&a0->unk28, 16);
         AddSprite(&a0->unk28, 0x100, NULL, NULL);
 

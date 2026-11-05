@@ -15,6 +15,11 @@
 static EWRAM_INIT struct unkStruct_203B2D4 *sUnknown_203B2D4 = {NULL};
 
 #include "data/pokemon_news2.h"
+#ifdef PORT
+#include "port/port_comfort.h"
+#else
+#define PORT_BLINK_MASK 8
+#endif
 
 static void sub_802BB14(u32 newState);
 static void sub_802BB28(void);
@@ -98,7 +103,7 @@ static void sub_802BB28(void)
 static void sub_802BB98(void)
 {
     if (sUnknown_203B2D4->unkC != 0) {
-        if (sUnknown_203B2D4->unk20 & 8)
+        if (sUnknown_203B2D4->unk20 & PORT_BLINK_MASK)
             sub_8013E54();
         sUnknown_203B2D4->unk20++;
     }
@@ -121,7 +126,7 @@ static void sub_802BB98(void)
 static void sub_802BC08(void)
 {
     if (sUnknown_203B2D4->unk8 < sUnknown_203B2D4->unkC) {
-        if (sUnknown_203B2D4->unk20 & 8)
+        if (sUnknown_203B2D4->unk20 & PORT_BLINK_MASK)
             sub_8013E54();
         sUnknown_203B2D4->unk20++;
     }

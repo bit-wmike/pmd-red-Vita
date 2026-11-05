@@ -338,6 +338,37 @@ static int ObjWidth(unsigned a0, unsigned a1)
     return shape < 3 ? w[shape][size] : 0;
 }
 
+static int ObjHeight(unsigned a0, unsigned a1)
+{
+    static const unsigned char h[3][4] = {{8, 16, 32, 64}, {8, 8, 16, 32}, {16, 32, 32, 64}};
+    unsigned shape = (a0 >> 14) & 3, size = (a1 >> 14) & 3;
+    return shape < 3 ? h[shape][size] : 0;
+}
+
+/* A screen UI sprite entirely outside the GBA screen (the game parks the
+ * dialogue arrow and menu cursors at y 160 and below): the GBA does not
+ * show it, the frame's margin must not either. Not in dungeons: there many
+ * world sprites (shadows, items, status icons) go through AddSprite and
+ * fill the margins on purpose. */
+static int UiSpriteOffScreen(int slot)
+{
+    uint16_t a0, a1;
+    int x, y, w, h;
+    memcpy(&a0, gHostOam + slot * 8, 2);
+    memcpy(&a1, gHostOam + slot * 8 + 2, 2);
+    if ((a0 & 0x0300) == 0x0200)
+        return 0; /* hidden anyway */
+    w = ObjWidth(a0, a1);
+    h = ObjHeight(a0, a1);
+    if (a0 & 0x0200) { /* affine, double size */
+        w *= 2;
+        h *= 2;
+    }
+    y = sSlotY[slot] + (((int)(a0 & 0xFF) - sSlotY[slot] + 128) & 255) - 128;
+    x = sSlotX[slot] + (((int)(a1 & 0x1FF) - sSlotX[slot] + 256) & 511) - 256;
+    return y >= PORT_GBA_H || y + h <= 0 || x >= PORT_GBA_W || x + w <= 0;
+}
+
 /* OAM slot dst = slot src moved to GBA x (the renderer reads x from OAM,
  * the base coordinate only resolves the 9-bit wrap). */
 static unsigned char sSavedObj[128][6]; /* OAM entries borrowed for copies, restored after drawing */
@@ -925,9 +956,13 @@ void Port_ViewBeforeRender(int *width, int *height)
         }
     }
 
-    virtuappu_mode1_win_dx = sDx;
-    virtuappu_mode1_win_dy = sDy;
-    virtuappu_mode1_line_dy = sDy;
+    /* the windows (WIN0H/WIN1H per line by HBlank DMA) shape the game's
+     * text boxes and the dungeon's darkness: screen UI, anchored like BG0/1
+     * (with the world's offset a text box at the camera's lower stop lost
+     * its fill in the top rows) */
+    virtuappu_mode1_win_dx = sUiDx;
+    virtuappu_mode1_win_dy = sUiDy;
+    virtuappu_mode1_line_dy = sUiDy;
     virtuappu_mode1_obj_port = 1;
     for (i = 0; i < 128; i++) {
         virtuappu_mode1_obj_dx[i] = (int16_t)(sSlotUi[i] ? sUiDx : sDx);
@@ -937,6 +972,9 @@ void Port_ViewBeforeRender(int *width, int *height)
         /* a slot the game's sprite system did not fill this frame (or the
          * one before) keeps GBA rules: parked below line 160 = hidden */
         virtuappu_mode1_obj_staged[i] = sSlotFrame[i] + 2 > Port_FrameCounter() + 1 && sSlotFrame[i] != 0;
+        if (virtuappu_mode1_obj_staged[i] && sSlotUi[i] && sActive && !sPictureClamp &&
+            sSceneLatched != PORT_SCENE_DUNGEON && UiSpriteOffScreen(i))
+            virtuappu_mode1_obj_dy[i] = 0x3000; /* far below the frame: not drawn */
     }
     /* the title's sea row continued to the frame's edges (copies into free
      * OAM slots, undone by Port_ViewAfterRender) */

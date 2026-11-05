@@ -9,6 +9,11 @@
 #include "sprite.h"
 #include "string_format.h"
 #include "text_1.h"
+#ifdef PORT
+#include "port/port_comfort.h"
+#else
+#define PORT_BLINK_MASK 8
+#endif
 
 static EWRAM_INIT SaveMenuWork *sSaveMenuWork = {NULL};
 
@@ -286,7 +291,7 @@ void sub_8038830(void)
 
 void sub_80388C4(void)
 {
-    if (sSaveMenuWork->unk1B0 & 8)
+    if (sSaveMenuWork->unk1B0 & PORT_BLINK_MASK)
         AddSprite(&sSaveMenuWork->unk1A8, 0x100, NULL, NULL);
 
     sSaveMenuWork->unk1B0++;

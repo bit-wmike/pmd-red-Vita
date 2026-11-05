@@ -32,6 +32,7 @@ static struct Field sFields[] = {
     {"language", &gPortConfig.language, -1, 4},
     {"text_debug", &gPortConfig.textDebug, 0, 1},
     {"text_instant", &gPortConfig.textInstant, 0, 1},
+    {"slow_blink", &gPortConfig.slowBlink, 0, 1},
     {"text_auto", &gPortConfig.textAuto, 0, 1},
     {"dungeon_speed", &gPortConfig.dungeonSpeed, 0, 2},
     {"walk_fast", &gPortConfig.walkFast, 0, 1},
@@ -65,6 +66,7 @@ void Port_ConfigDefaults(void)
     gPortConfig.moneyMult = 1;
     gPortConfig.iqMult = 1;
     gPortConfig.hpBars = 2;
+    gPortConfig.slowBlink = 1;
 }
 
 void Port_ConfigParse(const char *text)
