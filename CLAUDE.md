@@ -99,7 +99,7 @@ Schalter: `PMD_SHOT=f1,f2` / `PMD_SHOT_EVERY=n` (PPM), `PMD_VIEW=0/1/2`, `PMD_WA
   PPMs** (`cmp`); (2) Renderer-Änderungen Bild für Bild gegen die alte Version vergleichen;
   (3) Vita-Build ohne Fehler.
 
-## Stand (0.1.15, 05.11.2026)
+## Stand (0.1.16, 05.11.2026)
 - 0.1.12 (Mikes `run4`, 0.1.11: Absturz vor dem ersten Dungeon, Titel/Gesundheitshinweis englisch bzw.
   „fehlerhaft“, Tastatur-Müll bei der Namensgebung, Traumtext nicht zentriert): (1) **Absturz**: `lvmp001`
   (Levelkurve, AT-gepackt, 616-Byte-Block mit SIRO-Kopf) wird aus der EU-ROM genommen; `Port_ChooseFile`
@@ -123,6 +123,25 @@ Schalter: `PMD_SHOT=f1,f2` / `PMD_SHOT_EVERY=n` (PPM), `PMD_VIEW=0/1/2`, `PMD_WA
   UI-Ebene (BG0 mit eigenem dx) – Rücksprache mit Mike. `UniformMap` (einfarbige Karten → Bild mittig) ist
   drin, greift hier aber nicht (Karte hat echte Kacheln).
   (6) `vita.sh fetch` holt jetzt auch `pmd_red.sav`.
+- 0.1.16 (Mikes Wunschliste, drei Agenten + Menü): alle Komfortfunktionen und Cheats einzeln im Port-Menü
+  schaltbar (Abschnitte, scrollt 13 Zeilen; Ansicht immer Weitsicht, `viewMode` wird auf der Vita erzwungen).
+  Host: `PMD_CFG="key=value,..."` setzt beliebige settings.ini-Schlüssel. (1) **Komfort** (`port/port_comfort.c`):
+  `text_instant` (txtSpeed wie beim spieleigenen Sofort-Text), `text_auto` (A halten blättert Wartezustände nach
+  20 Bildern; Menüs/Ja-Nein reagieren nur auf Flanken), `dungeon_speed` 1/2 (in `sub_803E490`/
+  `DungeonRunFrameActions(id)`: bei Animations-IDs wird jedes 3./2. Logikbild der VBlank-Wait übersprungen,
+  Eingabeschleife/Menüs/Textboxen `IsPacedId` laufen normal, Musik unverändert; addiert sich zur spieleigenen
+  Option „Schnell“), `walk_fast` (Richtung gehalten = spieleigenes Rennen, `ground_lives_helper.c`),
+  `floor_autosave` (`Port_FloorStarted` in run_dungeon.c → Quicksave beim ersten Eingabebild der Etage).
+  (2) **Sanfte Cheats** (`port/port_cheats.c/.h`): Geld ×1–4 (Boden-Aufnahme, Missionsbelohnung), IQ ×1–4
+  (Gummis), Rekrutierung +200/+500 ‰ (`TryRecruitMonster`), Treppe auf der Karte wie Stair-Spotter
+  (`DrawMinimapTile`), Team-Werte ±10 %-Schritte in `CalcDamage` (nur `!isNotTeamMember`), Initiative als
+  Zusatz-/Verlust-Stufe auf einem Anteil der Züge (`CalcSpeedStage`; das Spiel kennt nur ganze Stufen).
+  `PMD_CHEAT_DEBUG=1` loggt. (3) **Overlay** (`port/port_overlay.c`, in `RenderFrame` vor `Platform_Present`,
+  Balken bei VBlank mit dem Weltversatz gesammelt): HP-Balken 16×3 über sichtbaren Gegnern
+  (`wildPokemon`, `isNotTeamMember`, kein Shop-Kecleon, `ShouldDisplayEntity`; Bosse = `bossFlag`),
+  Uhrzeit + Spielzeit (`gPlayTimeRef`) oben rechts mit 3×5-Font; `PMD_CLOCK=HH:MM` fixiert die Uhr auf dem
+  Host. Accessoren `Port_ViewWorldShift`, `Port_ViewSceneShown`. Alles bei Standardwerten wirkungslos
+  (Bilder byteidentisch zu 0.1.15). Ungetestet auf der Vita: walk_fast in der Basis, Bosse, Ortszeit.
 - 0.1.15 (Mikes `run5`, 0.1.14: Freeze beim ersten Dungeon weiterhin, Traumtext/Dialogboxen links, Weltkarte
   im Intro nur GBA-groß): (1) **Freeze gelöst und auf dem Host reproduziert** (Skript
   `scratchpad/dungeon_b.txt`: Partner **Bisasam** → `lvmp001`; 0.1.14-Host stürzt mit Signal 11 beim
@@ -330,5 +349,5 @@ Schalter: `PMD_SHOT=f1,f2` / `PMD_SHOT_EVERY=n` (PPM), `PMD_VIEW=0/1/2`, `PMD_WA
    (z. B. Dungeon-Zustand während des Intros, `PMD_QLOAD_AT=10`) stürzt es in `ground_weather.c`
    ab (`gUnknown_3001B74` NULL). Sicher nur innerhalb derselben Szene; Abhilfe: nach dem Laden den
    Hauptschleifen-Zustand neu aufsetzen (`GameLoop_Async` von oben) oder Laden nur im selben Modus erlauben.
-6. Weitere sanfte Cheats (z. B. IQ-Multiplikator, Geld ×2) nur nach Rücksprache; Overlay/Karte
-   wie beim TMC-Port.
+6. ~~Weitere sanfte Cheats~~ seit 0.1.16 (Geld, IQ, Rekrutierung, Treppe, Team-Werte); Overlay/Karte
+   wie beim TMC-Port noch offen.
