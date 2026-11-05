@@ -1,4 +1,14 @@
 #include "global.h"
+
+/* PORT: these functions are code, not data. On the GBA they are copied to
+ * IWRAM for speed; the Vita does not execute its data segment, so they stay
+ * in the text segment there (0.1.7 crashed in DrawDialogueBoxString_Async
+ * calling sub_82729A4 through gIwramTextFunc3). */
+#ifdef PORT
+#define IWRAM_FUNC
+#else
+#define IWRAM_FUNC IWRAM_INIT
+#endif
 #include "structs/str_text.h"
 #include "text_1.h"
 #include "text_4.h"
@@ -10,12 +20,12 @@ static void ScrollUpWindowInternal(Window *txtStructs, s32 id);
 static void sub_82729B8(Window *txtStructs, s32 id);
 static void sub_8272A8C(Window *txtStructs, s32 id);
 
-IWRAM_INIT void ScrollDownWindow(s32 windowId)
+IWRAM_FUNC void ScrollDownWindow(s32 windowId)
 {
     ScrollDownWindowInternal(gWindows, windowId);
 }
 
-IWRAM_INIT static void ScrollDownWindowInternal(Window *windows, s32 windowId)
+IWRAM_FUNC static void ScrollDownWindowInternal(Window *windows, s32 windowId)
 {
     Window *window = &windows[windowId];
 
@@ -73,12 +83,12 @@ IWRAM_INIT static void ScrollDownWindowInternal(Window *windows, s32 windowId)
     }
 }
 
-IWRAM_INIT void ScrollUpWindow(s32 windowId)
+IWRAM_FUNC void ScrollUpWindow(s32 windowId)
 {
     ScrollUpWindowInternal(gWindows, windowId);
 }
 
-IWRAM_INIT static void ScrollUpWindowInternal(Window *windows, s32 windowId)
+IWRAM_FUNC static void ScrollUpWindowInternal(Window *windows, s32 windowId)
 {
     Window *window = &windows[windowId];
 
@@ -155,12 +165,12 @@ IWRAM_INIT static void ScrollUpWindowInternal(Window *windows, s32 windowId)
     }
 }
 
-IWRAM_INIT void sub_82729A4(s32 id)
+IWRAM_FUNC void sub_82729A4(s32 id)
 {
     sub_82729B8(gWindows, id);
 }
 
-IWRAM_INIT static void sub_82729B8(Window *windows, s32 id)
+IWRAM_FUNC static void sub_82729B8(Window *windows, s32 id)
 {
     s32 i, j;
     Window *window = &windows[id];
@@ -209,12 +219,12 @@ IWRAM_INIT static void sub_82729B8(Window *windows, s32 id)
     window->unk44 = TRUE;
 }
 
-IWRAM_INIT void sub_8272A78(s32 id)
+IWRAM_FUNC void sub_8272A78(s32 id)
 {
     sub_8272A8C(gWindows, id);
 }
 
-IWRAM_INIT static void sub_8272A8C(Window *windows, s32 id)
+IWRAM_FUNC static void sub_8272A8C(Window *windows, s32 id)
 {
     s32 i, j;
     Window *window = &windows[id];

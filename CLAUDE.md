@@ -95,7 +95,18 @@ Schalter: `PMD_SHOT=f1,f2` / `PMD_SHOT_EVERY=n` (PPM), `PMD_VIEW=0/1/2`, `PMD_WA
   PPMs** (`cmp`); (2) Renderer-Änderungen Bild für Bild gegen die alte Version vergleichen;
   (3) Vita-Build ohne Fehler.
 
-## Stand (0.1.7, 05.11.2026)
+## Stand (0.1.8, 05.11.2026)
+- 0.1.8: **Quiz-Absturz gelöst** (Mikes `run1` im Daten-Repo: Dump + crumbs). Ursache: acht
+  Textfunktionen in `src/text_4.c` stehen im Decomp mit `IWRAM_INIT` (Sektion `iwram_init`, auf
+  dem GBA nach IWRAM kopiert) – im Vita-ELF lagen sie damit im **Datensegment** (RWE), das die
+  Vita nicht ausführt; der Sprung über `gIwramTextFunc3` → `sub_82729A4` in
+  `DrawDialogueBoxString_Async` (erster Textbox-Scroll am Quiz-Ende) stürzte ab. Host und qemu
+  führen Daten aus, darum dort unauffällig. Fix: `IWRAM_FUNC` (unter PORT leer); Datensegment ist
+  jetzt RW, `nm` zeigt keine T-Symbole mehr ab `0x824f0000` (Prüfregel für künftige Versionen).
+  Dump-Auswertung: psp2dmp ist gzip → `gunzip`, dann `/home/user/dumps/parse_dump.py`; Modul-
+  Segment 1 = ELF `0x81000000`, Segment 2 (Daten) = ELF `0x824f0000` (aus `readelf -l`).
+  Leistung laut `log.txt` (424×240, Quiz/Intro): frame work 17–18 ms, render ~14 ms, `catchup`
+  steigt → unter 60 FPS; Punkt 4 der offenen Liste wird wichtig (30-FPS-Modus existiert).
 - 0.1.7: Mikes Test von 0.1.6: **Absturz am Ende des Quiz** (bei der letzten Frage bzw. bei „du
   scheinst der … Typ zu sein“); der psp2dmp bleibt bei 10 % hängen. Auf dem Host läuft dieselbe
   Stelle durch (auch unter qemu-arm). Deshalb: **Breadcrumbs** – `Port_Crumb()` (port_game.c)
@@ -195,7 +206,9 @@ Schalter: `PMD_SHOT=f1,f2` / `PMD_SHOT_EVERY=n` (PPM), `PMD_VIEW=0/1/2`, `PMD_WA
    Deutscher Spieltext aus der EU-ROM (Stringtabellen der EU-Sprachen finden) nur nach Rücksprache.
 3. Dungeon: `ShouldDisplayEntity` (±32 px) gilt auch für Logik – Monster/Items in den Rändern
    jenseits davon werden nicht gezeichnet; evtl. reine Render-Kopie einführen.
-4. Leistung messen (Vita: 424×240 Software-PPU mit 3 Threads; Old-3DS-Profil aktiv).
+4. Leistung: Mikes Log (0.1.7) zeigt in der Weitsicht 17–18 ms Arbeit pro Bild (Render ~14 ms),
+   also knapp unter 60 FPS mit steigendem `catchup`. Renderer-Profil wie beim TMC-Port (Kachelpfade,
+   Compositor) oder standardmäßig 30 FPS für die Weitsicht erwägen.
 5. **Schnellladen** sichert nur die RAM-Abschnitte (kein C-Stack): aus einer anderen Szene geladen
    (z. B. Dungeon-Zustand während des Intros, `PMD_QLOAD_AT=10`) stürzt es in `ground_weather.c`
    ab (`gUnknown_3001B74` NULL). Sicher nur innerhalb derselben Szene; Abhilfe: nach dem Laden den
