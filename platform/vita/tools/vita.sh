@@ -31,7 +31,23 @@ reach() {
         exit 1
     fi
 }
-ftp() { reach; lftp -e "set net:timeout 10; set net:max-retries 2; set ftp:passive-mode on; $1; bye" "$URL"; }
+ftp() { reach; lftp -e "set net:timeout 30; set net:max-retries 8; set net:reconnect-interval-base 3; set ftp:passive-mode on; $1; bye" "$URL"; }
+# upload <file> [name on the Vita]: curl (retries, resumes, shows progress)
+# with lftp as the fallback - the Vita's Wi-Fi is slow to wake up and drops
+# long transfers now and then
+upload() {
+    local f="$1" n="${2:-$(basename "$1")}" i
+    reach
+    if command -v curl >/dev/null; then
+        for i in 1 2 3 4 5; do
+            curl -# -T "$f" --ftp-pasv --connect-timeout 15 --speed-time 60 --speed-limit 1 \
+                --retry 3 --retry-delay 3 "$URL/$DATA/$n" && return 0
+            echo "Upload-Versuch $i fehlgeschlagen, neuer Versuch ..."
+            sleep 3
+        done
+    fi
+    lftp -e "set net:timeout 30; set net:max-retries 8; set net:reconnect-interval-base 3; set ftp:passive-mode on; put -c -O $DATA '$f' -o '$n'; bye" "$URL"
+}
 
 case "${1:-}" in
 fetch)
@@ -61,7 +77,7 @@ fetch)
     ;;
 vpk)
     vpk="${2:?Pfad zur VPK fehlt}"
-    ftp "put -O $DATA '$vpk'"
+    upload "$vpk"
     echo "== $vpk liegt in $DATA/ - in VitaShell oeffnen und installieren"
     ;;
 log)
@@ -73,7 +89,7 @@ install)
     vpk="$(ls -1 "$here"/builds/*.vpk 2>/dev/null | sort -V | tail -1)"
     [ -n "$vpk" ] || { echo "keine VPK in builds/"; exit 1; }
     echo "== $vpk"
-    ftp "put -O $DATA '$vpk'"
+    upload "$vpk"
     echo "== liegt in $DATA/ - in VitaShell oeffnen und installieren"
     ;;
 set)
@@ -84,7 +100,7 @@ set)
     ftp "get -O '$(dirname "$tmp")' $DATA/settings.ini -o '$(basename "$tmp")'" 2>/dev/null || true
     grep -v "^$key=" "$tmp" > "$tmp.new" 2>/dev/null || true
     echo "$kv" >> "$tmp.new"
-    ftp "put -O $DATA '$tmp.new' -o settings.ini"
+    upload "$tmp.new" settings.ini
     rm -f "$tmp" "$tmp.new"
     echo "== settings.ini auf der Vita: $kv (gilt ab dem naechsten Start des Spiels)"
     ;;
