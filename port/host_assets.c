@@ -198,6 +198,37 @@ static uint64_t Load64(const unsigned char *p)
 static unsigned char *sScratch;
 static size_t sScratchSize;
 
+/* A block that is holes only (a pointer table into baserom.gba data, which
+ * the decomp could not resolve): nothing to hash, nothing to fill. */
+static int HoleOnly(const struct Asset *a)
+{
+    uint32_t i, n = 0;
+    for (i = 0; i < a->holeCount; i++)
+        n += a->holes[i * 2 + 1];
+    return a->holeCount > 0 && n >= a->size;
+}
+
+/* Small holes (up to 64 bytes) are pointer tables the decomp left as raw
+ * bytes: their ROM addresses become host pointers into the ROM copy.
+ * (Pointer holes of 4 bytes are patched again by Relocate().) */
+static void TranslateSmallHoles(struct Asset *a)
+{
+    uint32_t i, k;
+    for (i = 0; i < a->holeCount; i++) {
+        uint32_t off = a->holes[i * 2], len = a->holes[i * 2 + 1];
+        if (len > 64 || off + len > a->size)
+            continue;
+        for (k = 0; k + 4 <= len; k += 4) {
+            uint32_t v;
+            memcpy(&v, a->dst + off + k, 4);
+            if (v >= 0x08000000u && v - 0x08000000u < gHostRomSize) {
+                const void *host = gHostRom + (v - 0x08000000u);
+                memcpy(a->dst + off + k, &host, 4);
+            }
+        }
+    }
+}
+
 static int Verify(struct Asset *a, uint32_t romOff)
 {
     uint32_t i;
@@ -220,6 +251,7 @@ static int Verify(struct Asset *a, uint32_t romOff)
     /* the raw bytes: the holes hold baserom.gba parts (portraits, samples)
      * that the hash cannot know, and pointers that Relocate() patches */
     memcpy(a->dst, gHostRom + romOff, a->size);
+    TranslateSmallHoles(a);
     a->romAddr = romOff + 0x08000000u;
     a->found = 1;
     return 1;
@@ -260,6 +292,7 @@ static int TryPartial(struct Asset *a, uint32_t p)
     if (ok * 2 < a->chunkCount)
         return 0;
     memcpy(a->dst, gHostRom + p, a->size); /* raw: see Verify() */
+    TranslateSmallHoles(a);
     Platform_Log("assets: %s taken over partly (%u of %u chunks)\n", a->name, ok, a->chunkCount);
     a->romAddr = p + 0x08000000u;
     a->found = 2;
@@ -339,6 +372,7 @@ static void Scan(int step, int mode)
 static void BuildAddressIndex(void);
 static void IndexRomArchives(void);
 static void FillArraysFromRomFiles(void);
+static void PlaceByNeighbours(void);
 
 /* Parts of a block found as a whole are found too; a block whose parts
  * were all found counts as found. */
@@ -500,6 +534,8 @@ int Port_LoadRom(unsigned char *rom, size_t size)
     for (i = 0; i < sAssetCount; i++) {
         struct Asset *a = &sAssets[i];
         if (a->keyOff1 == -2) {
+            if (HoleOnly(a))
+                continue; /* placed next to its neighbours below */
             memset(a->dst, (int)(a->key1 & 0xFF), a->size);
             a->found = 1;
             known++;
@@ -535,6 +571,7 @@ int Port_LoadRom(unsigned char *rom, size_t size)
         }
         SaveIndex();
     }
+    PlaceByNeighbours();
     IndexRomArchives();
     FillArraysFromRomFiles();
     missing = 0;
@@ -865,6 +902,47 @@ static unsigned UnpackEuTiles(unsigned char *dst, unsigned cap, const unsigned c
         }
     }
     return raw;
+}
+
+/* Blocks that are holes only cannot be found by content: they sit at the
+ * same place relative to a found neighbour of the same section (the one
+ * right before or right after them). The neighbours' order in the array
+ * is their order in the section. */
+static void PlaceByNeighbours(void)
+{
+    size_t i, j;
+    unsigned n = 0;
+    for (i = 0; i < sAssetCount; i++) {
+        struct Asset *a = &sAssets[i];
+        uint32_t romOff = 0;
+        int ok = 0;
+        if (a->found || a->childCount || !HoleOnly(a) || a->parent < 0)
+            continue;
+        if (sAssets[a->parent].found == 1) {
+            romOff = sAssets[a->parent].romAddr - 0x08000000u + (uint32_t)(a->dst - sAssets[a->parent].dst);
+            ok = 1;
+        }
+        for (j = 0; j < sAssetCount && !ok; j++) {
+            const struct Asset *b = &sAssets[j];
+            if (b->parent != a->parent || b->found != 1 || b->romAddr < 0x08000000u)
+                continue;
+            if (b->dst + b->size == a->dst) {
+                romOff = b->romAddr - 0x08000000u + b->size;
+                ok = 1;
+            } else if (a->dst + a->size == b->dst && b->romAddr - 0x08000000u >= a->size) {
+                romOff = b->romAddr - 0x08000000u - a->size;
+                ok = 1;
+            }
+        }
+        if (!ok || (uint64_t)romOff + a->size > gHostRomSize)
+            continue;
+        memcpy(a->dst, gHostRom + romOff, a->size);
+        TranslateSmallHoles(a);
+        a->romAddr = romOff + 0x08000000u;
+        a->found = 6;
+        n++;
+    }
+    Platform_Log("assets: %u hole-only blocks placed next to their neighbours\n", n);
 }
 
 /* C arrays of the port's version that the user's ROM does not have: the

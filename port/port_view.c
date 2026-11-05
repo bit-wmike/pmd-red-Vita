@@ -232,10 +232,11 @@ static int DarknessActive(void)
 static int GroundInfo(int *camX, int *camY, int *mapW, int *mapH, int *wrap)
 {
     GroundBg *g = gGroundMapDungeon_3001B70;
-    /* the title screen is the ground map S02: a picture made for the
-     * 240x160 screen with stray rows below it; shown without a map */
+    /* the title screen (S02) and the health warning (S05) are ground maps
+     * made for the 240x160 screen with stray rows beyond it; shown as
+     * pictures without a map */
     if (g != NULL && g->bpcFile != NULL && g->bpcFile->file != NULL && g->bpcFile->file->name != NULL &&
-        strcmp((const char *)g->bpcFile->file->name, "S02c") == 0)
+        (strcmp((const char *)g->bpcFile->file->name, "S02c") == 0 || strcmp((const char *)g->bpcFile->file->name, "S05c") == 0))
         return 0;
     PixelPos cam;
     if (g == NULL || g->unk474 <= 0 || g->mapRender[0].chunkDimensions == 0)

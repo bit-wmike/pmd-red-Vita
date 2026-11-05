@@ -95,7 +95,28 @@ Schalter: `PMD_SHOT=f1,f2` / `PMD_SHOT_EVERY=n` (PPM), `PMD_VIEW=0/1/2`, `PMD_WA
   PPMs** (`cmp`); (2) Renderer-Änderungen Bild für Bild gegen die alte Version vergleichen;
   (3) Vita-Build ohne Fehler.
 
-## Stand (0.1.9, 05.11.2026)
+## Stand (0.1.10, 05.11.2026)
+- 0.1.10 (Mikes `run3`: Absturz beim ersten Brief, Gesundheitswarnung „springt“, englische
+  Dungeon-Menübefehle, Sprite-Fragment, Wolken am Briefkasten):
+  (1) **Absturz** in `ReadAnimatedColorData` (NULL-Zeiger): `gUnknown_839B7D4` (titlemenu_sbin)
+  ist eine Zeigertabelle, deren 2. Hälfte im Decomp als `.incbin baserom.gba` steht → der Block
+  besteht nur aus Löchern, `keysel` machte daraus einen Konstantblock (Füllwert 0) → Nullzeiger.
+  Jetzt: `HoleOnly`-Blöcke werden nicht gefüllt, sondern nach den Scans neben ihren gefundenen
+  Nachbarn (Elternblock oder direkt angrenzendes Geschwister, Zustand 6) platziert
+  (`PlaceByNeighbours`, 70 Blöcke); kleine Löcher (≤ 64 Byte) gelten als Zeigertabellen und werden
+  nach dem Rohkopieren in Host-Zeiger auf `gHostRom` übersetzt (`TranslateSmallHoles`, auch in
+  `Verify`/`TryPartial`). Der Quiz-Fragenzufall ändert sich dadurch (Fragetabellen waren Nullen).
+  (2) **Gesundheitswarnung** ist die Bodenkarte S05 (Inhalt 264×240) → wie S02 als Bild behandelt.
+  (3) Menübefehle im Dungeon („Get“ …): Struct-Tabellen mit Stride 8/12/16 (`sStride`), Sprache
+  einer Tabelle notfalls aus der direkt folgenden Code-Datenregion (`LangNearRegion`, ≤ 4 KiB);
+  englische Pools/Regionen (+ 4 KiB davor) überschreiben gleichlautende Fremdwörter im Index
+  (`PreferEnglishStrings`: FR „Place“ verdeckte EN „Place“).
+  (4) Offen: Sprite-Fragment (Glumandas Schwanzflamme) links unten im Haus/am Briefkasten –
+  vermutlich ein OAM-Eintrag ohne Port-Versatz; braucht OAM-Dump der Szene. Wolken am Briefkasten
+  „halbiert“ (BG2-Wetterebene in der Weitsicht) – Screenshot fehlt noch. Vita-Log `catchup 0`,
+  14–17 ms/Bild. Mike wünscht Rahmen in der Pixelgenau-Ansicht: Standard Artwork-Hintergrund
+  (LiveArea-bg abgedunkelt), umschaltbar auf echten Bezel mit Randgrafik; Startzeit (39 s beim
+  ersten Start) durch vollständigen Cache (auch Textindex) verkürzen statt ROM in die VPK.
 - 0.1.9 (Mikes `run2`: Absturz beim Aufheben einer Sinelbeere, fehlende NPC-Gesichter, dunkle
   Ränder im hellen Dungeon, Titelbild-Streifen, englische Dungeon-Meldungen auf der Vita):
   (1) **EU-Itemtabelle** (`itempara`) hat keine Namens-/Beschreibungszeiger (die EU sucht Namen
