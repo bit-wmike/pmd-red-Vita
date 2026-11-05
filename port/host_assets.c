@@ -207,6 +207,17 @@ static int HoleOnly(const struct Asset *a)
     return a->holeCount > 0 && n >= a->size;
 }
 
+/* Does the block have a hole of baserom.gba data (more than 64 bytes)?
+ * Smaller holes are pointers, which Relocate fills. */
+static int LargeHole(const struct Asset *a)
+{
+    uint32_t i;
+    for (i = 0; i < a->holeCount; i++)
+        if (a->holes[i * 2 + 1] > 64)
+            return 1;
+    return 0;
+}
+
 /* Small holes (up to 64 bytes) are pointer tables the decomp left as raw
  * bytes: their ROM addresses become host pointers into the ROM copy.
  * (Pointer holes of 4 bytes are patched again by Relocate().) */
@@ -711,7 +722,7 @@ int Port_LoadRom(unsigned char *rom, size_t size)
         /* a block of baserom.gba bytes only has a fallback of zeros: it
          * stays "not found", so a file of that name comes from the ROM's
          * own archive (the title menu palettes titlen0p..) */
-        if (!a->found && a->fallback && !HoleOnly(a)) {
+        if (!a->found && a->fallback && !(HoleOnly(a) && LargeHole(a))) {
             memcpy(a->dst, a->fallback, a->size);
             a->found = 4;
             gPortAssetsPartial++;
