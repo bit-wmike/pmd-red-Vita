@@ -18,6 +18,7 @@
  *   PMD_VIEW=0|1|2       view mode (GBA / wide / full), default from settings.ini
  *   PMD_QSAVE_AT=n       quick save at frame n, PMD_QLOAD_AT=n quick load
  *   PMD_CHEATS=1         all cheats on;  PMD_30FPS=1  render every 2nd frame
+ *   PMD_CFG=k=v,k=v      any settings.ini keys (e.g. PMD_CFG=hp_bars=2,text_instant=1)
  *   PMD_WAV=1            write outdir/audio.wav
  *   PMD_TIMING=1         print the render time every 300 frames
  *   PMD_TRACE=file       per-frame checksums of the game state
@@ -306,6 +307,17 @@ int main(int argc, char **argv)
     if (getenv("PMD_CHEATS")) {
         gPortConfig.expMultiplier = 4;
         gPortConfig.noHunger = 1;
+    }
+    /* PMD_CFG="key=value,key=value": any settings.ini keys (tests) */
+    if ((e = getenv("PMD_CFG")) != NULL) {
+        char buf[512];
+        size_t i;
+        strncpy(buf, e, sizeof(buf) - 1);
+        buf[sizeof(buf) - 1] = 0;
+        for (i = 0; buf[i]; i++)
+            if (buf[i] == ',')
+                buf[i] = '\n';
+        Port_ConfigParse(buf);
     }
     Port_RunGame();
     return 0;

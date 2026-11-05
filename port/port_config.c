@@ -31,6 +31,22 @@ static struct Field sFields[] = {
     {"no_hunger", &gPortConfig.noHunger, 0, 1},
     {"language", &gPortConfig.language, -1, 4},
     {"text_debug", &gPortConfig.textDebug, 0, 1},
+    {"text_instant", &gPortConfig.textInstant, 0, 1},
+    {"text_auto", &gPortConfig.textAuto, 0, 1},
+    {"dungeon_speed", &gPortConfig.dungeonSpeed, 0, 2},
+    {"walk_fast", &gPortConfig.walkFast, 0, 1},
+    {"floor_autosave", &gPortConfig.floorAutosave, 0, 1},
+    {"clock_overlay", &gPortConfig.clockOverlay, 0, 1},
+    {"hp_bars", &gPortConfig.hpBars, 0, 2},
+    {"money_multiplier", &gPortConfig.moneyMult, 1, 4},
+    {"iq_multiplier", &gPortConfig.iqMult, 1, 4},
+    {"recruit_boost", &gPortConfig.recruitBoost, 0, 2},
+    {"stairs_marker", &gPortConfig.stairsMarker, 0, 1},
+    {"stat_atk", &gPortConfig.statAtk, -3, 3},
+    {"stat_def", &gPortConfig.statDef, -3, 3},
+    {"stat_spatk", &gPortConfig.statSpAtk, -3, 3},
+    {"stat_spdef", &gPortConfig.statSpDef, -3, 3},
+    {"stat_speed", &gPortConfig.statSpeed, -3, 3},
 };
 
 void Port_ConfigDefaults(void)
@@ -46,6 +62,9 @@ void Port_ConfigDefaults(void)
     gPortConfig.triangleMove = 1;
     gPortConfig.rightStickDiag = 1;
     gPortConfig.expMultiplier = 1;
+    gPortConfig.moneyMult = 1;
+    gPortConfig.iqMult = 1;
+    gPortConfig.hpBars = 2;
 }
 
 void Port_ConfigParse(const char *text)

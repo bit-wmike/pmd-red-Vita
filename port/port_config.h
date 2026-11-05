@@ -34,6 +34,20 @@ struct PortConfig {
     int noHunger;        /* the belly does not go down */
     int textDebug;       /* log every text without a translation */
     int language;        /* PORT_LANG_*: -1 = not chosen yet (European ROM only) */
+    /* comfort (all optional, port menu) */
+    int textInstant;     /* 0/1: text boxes show their text at once */
+    int textAuto;        /* 0/1: holding A advances text boxes */
+    int dungeonSpeed;    /* 0 normal, 1 x1.5, 2 x2: moves and enemy turns in dungeons */
+    int walkFast;        /* 0/1: faster walking in the town and base */
+    int floorAutosave;   /* 0/1: quick save whenever a dungeon floor is entered */
+    int clockOverlay;    /* 0/1: time of day and play time in the margin */
+    int hpBars;          /* 0 off, 1 bosses, 2 all enemies: HP bars over enemies */
+    /* soft cheats */
+    int moneyMult;       /* 1..4: money found and rewards */
+    int iqMult;          /* 1..4: IQ gained */
+    int recruitBoost;    /* 0 off, 1 +20 %, 2 +50 %: recruitment chance */
+    int stairsMarker;    /* 0/1: the stairs are shown on the floor map from the start */
+    int statAtk, statDef, statSpAtk, statSpDef, statSpeed; /* -3..+3: team stat modifiers (steps of 10 %) */
 };
 
 extern struct PortConfig gPortConfig;
