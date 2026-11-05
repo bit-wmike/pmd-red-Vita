@@ -99,7 +99,7 @@ Schalter: `PMD_SHOT=f1,f2` / `PMD_SHOT_EVERY=n` (PPM), `PMD_VIEW=0/1/2`, `PMD_WA
   PPMs** (`cmp`); (2) Renderer-Änderungen Bild für Bild gegen die alte Version vergleichen;
   (3) Vita-Build ohne Fehler.
 
-## Stand (0.1.16, 05.11.2026)
+## Stand (0.1.17, 05.11.2026)
 - 0.1.12 (Mikes `run4`, 0.1.11: Absturz vor dem ersten Dungeon, Titel/Gesundheitshinweis englisch bzw.
   „fehlerhaft“, Tastatur-Müll bei der Namensgebung, Traumtext nicht zentriert): (1) **Absturz**: `lvmp001`
   (Levelkurve, AT-gepackt, 616-Byte-Block mit SIRO-Kopf) wird aus der EU-ROM genommen; `Port_ChooseFile`
@@ -123,6 +123,33 @@ Schalter: `PMD_SHOT=f1,f2` / `PMD_SHOT_EVERY=n` (PPM), `PMD_VIEW=0/1/2`, `PMD_WA
   UI-Ebene (BG0 mit eigenem dx) – Rücksprache mit Mike. `UniformMap` (einfarbige Karten → Bild mittig) ist
   drin, greift hier aber nicht (Karte hat echte Kacheln).
   (6) `vita.sh fetch` holt jetzt auch `pmd_red.sav`.
+- 0.1.17 (Mikes `run6`, 0.1.16: Absturz nach dem ersten Brief, Titel-Spiegelung nicht über die ganze Breite,
+  Geckarbor-Level-up französisch, Fragebogen englisch, Pixelfehler vor „Neues Spiel“, Level-up englisch):
+  **Referenz-Emulator**: `libmgba-dev` (apt) + Scratchpad `ref/mgba_ref.c` (gleiches Skriptformat, `REF_SHOT`,
+  `REF_SHOT_EVERY`, `REF_SAVE`) zeigt das echte Spiel; Bilder um ~100–120 Bilder versetzt (Boot), EU-Spiel ohne
+  Spielstand englisch. Damit gefunden: (1) **Titelmenü-Bild** (Schiggy/Pikachu am Briefkasten) fehlte, statt
+  dessen hellblauer Klecks + Punkte: `titlen0..2`/`titlen0p..` sind im Decomp reine baserom-Bytes; Block per
+  Nachbar geschätzt (Zustand 6) bzw. Ersatzkopie aus Nullen. Jetzt: Zustand 6 → Datei aus dem ROM-Archiv
+  (`Port_ChooseFile`), Blöcke nur aus großen Löchern (>64 Byte, `LargeHole`) bekommen keine Null-Ersatzkopie
+  (reine Zeigertabellen wie b14canm schon – sonst Absturz im Dungeon-Test). (2) **Titel-Meer**: Zeile aus
+  32-px-Sprites (y=132, x −38…250), im Original vom Bildrand verdeckt; `ExtendSpriteRows` (Ende von
+  `Port_ViewBeforeRender`, NACH der staged-Berechnung) kopiert die Reihe in freie OAM-Slots (x im OAM-Eintrag
+  setzen! der Renderer liest x aus OAM, base_x löst nur den 9-Bit-Umbruch), `Port_ViewAfterRender` stellt die
+  Slots nach dem Zeichnen wieder her (das Spiel schreibt unbenutzte Slots nicht jedes Bild neu). Kanten-Spalten
+  der Titelkarte S02 laufen in die Ränder (`sPictureClamp`). (3) Bilder schmaler als das Bild: Spalten daneben
+  schwarz (`Port_ViewBlankCols`, Sprites enden an der Bildkante); S03 (Intro-Weltkarte) = GBA-großes Bild.
+  (4) **Spracherkennung** paralleler Tabellen: ganze Wörter (Trennung an `~27`, Umbrüchen, Satzzeichen), mit
+  Pronomen; Partner-Dateien liegen EN,FR,DE,IT,ES → Positionsregel gab FR. `DetectLanguage` (Pools, Indexzeit)
+  unverändert (`sPoolWords`), sonst müsste `TEXT_INDEX_FORMAT` steigen. Regression über 8264 Tabellen-Strings:
+  nur falsche Übersetzungen ändern sich. (5) Level-up-Wertezeilen einzeln übersetzt (`dungeon_leveling.c`,
+  vorher als Ganzes nirgends in der ROM). (6) **AddressSanitizer-Build**: `make TARGET=host BUILD=build/asan-host
+  OPT="-O1 -g -fno-omit-frame-pointer -fsanitize=address" ARCHFLAGS="-m32 -fno-pie -no-pie -malign-data=abi
+  -fsanitize=address"`, laufen mit `ASAN_OPTIONS=detect_leaks=0:halt_on_error=1`; fand `PageOf` (las Byte vor
+  Stack-Puffern) → `RegionStart/AfterPageBreak` (nur ROM und Spiel-RAM-Sektionen). Intro bis Dungeon damit sauber.
+  (7) Crumbs: jeder Bodenskript-Befehl (`op xx a b`), Datei alle 10 Bilder; Vita-Log `[perf]` mit freiem Speicher.
+  Host-Skriptarrays 8192 Zeilen (vorher Pufferüberlauf ab 1024). `vita.sh get <datei>` holt eine Datei.
+  Offen: Brief-Absturz (Agent reproduziert aus Mikes Spielstand), Fragebogen englisch nur auf der Vita
+  (Verdacht: auf der Vita gebauter `textindex.bin` – Datei von Mike holen).
 - 0.1.16 (Mikes Wunschliste, drei Agenten + Menü): alle Komfortfunktionen und Cheats einzeln im Port-Menü
   schaltbar (Abschnitte, scrollt 13 Zeilen; Ansicht immer Weitsicht, `viewMode` wird auf der Vita erzwungen).
   Host: `PMD_CFG="key=value,..."` setzt beliebige settings.ini-Schlüssel. (1) **Komfort** (`port/port_comfort.c`):
