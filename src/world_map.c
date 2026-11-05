@@ -455,7 +455,13 @@ static bool8 FadeScreen(void)
         }
 
         color = (void *) sWorldMapPtr->unk1100[1]->data;
+#ifdef PORT
+        /* Port: "palet" holds 14 palettes (224 colours); the GBA reads 16
+         * more from whatever follows it in the ROM (OBJ bank 14, unused) */
+        for (i = 0; i < 224; color++, i++) {
+#else
         for (i = 0; i < 240; color++, i++) {
+#endif
             SetBGPaletteBufferColorRGB(i + 256, color, sWorldMapPtr->brightness, NULL);
         }
 

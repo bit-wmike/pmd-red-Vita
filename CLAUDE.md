@@ -99,7 +99,7 @@ Schalter: `PMD_SHOT=f1,f2` / `PMD_SHOT_EVERY=n` (PPM), `PMD_VIEW=0/1/2`, `PMD_WA
   PPMs** (`cmp`); (2) Renderer-Änderungen Bild für Bild gegen die alte Version vergleichen;
   (3) Vita-Build ohne Fehler.
 
-## Stand (0.1.17, 05.11.2026)
+## Stand (0.1.18, 05.11.2026)
 - 0.1.12 (Mikes `run4`, 0.1.11: Absturz vor dem ersten Dungeon, Titel/Gesundheitshinweis englisch bzw.
   „fehlerhaft“, Tastatur-Müll bei der Namensgebung, Traumtext nicht zentriert): (1) **Absturz**: `lvmp001`
   (Levelkurve, AT-gepackt, 616-Byte-Block mit SIRO-Kopf) wird aus der EU-ROM genommen; `Port_ChooseFile`
@@ -123,6 +123,22 @@ Schalter: `PMD_SHOT=f1,f2` / `PMD_SHOT_EVERY=n` (PPM), `PMD_VIEW=0/1/2`, `PMD_WA
   UI-Ebene (BG0 mit eigenem dx) – Rücksprache mit Mike. `UniformMap` (einfarbige Karten → Bild mittig) ist
   drin, greift hier aber nicht (Karte hat echte Kacheln).
   (6) `vita.sh fetch` holt jetzt auch `pmd_red.sav`.
+- 0.1.18 (Agent reproduzierte aus Mikes `run6/pmd_red.sav`: Brief → „Okay! Los!“ → **Weltkarte stürzt ab**,
+  in 0.1.16 und 0.1.17 an verschiedenen Stellen; Skripte `platform/host/scripts/save_run6_letter_*.txt`, Spielstand
+  in den Ausgabeordner kopieren). Mikes eigener Absturz kurz davor (nach „Hä? Wieso nicht?“) war auf dem Host nicht
+  nachstellbar (bei ihm fehlte schon das „?“-Emote – Zustand aus durchgehender Sitzung). Ursachen der Weltkarte:
+  (1) Dateien mit baserom-Daten (Loch > 64 Byte in irgendeinem ihrer Blöcke, `Port_AssetIncompleteIn`) kommen jetzt
+  immer aus dem ROM-Archiv: `wmp2font` war per wenigen festen Bytes im **Code** der EU-ROM (0x0b70e8) „gefunden“
+  worden → Kartenkacheln = Code; `wmapspr`/`wmp2mcc` waren Null-Ersatzkopien. (2) `Port_RelocateRomFile` übersetzt
+  nur Wörter, die in die Datei selbst zeigen (Portraits `kao***` hatten adressähnliche Bildbytes). (3) **EU-Posen**:
+  `wmapspr` (EU-Format, auch die EU-Archiv-`ax***`) hat je Pose einen Eintrag ohne Endmarke; `sub_800533C` endet
+  eine Pose, wo laut Tabelle die nächste beginnt bzw. nach einem Eintrag bei Ein-Eintrag-Tabellen – nur für
+  Tabellen in `gHostRom` (Port-Kopien sind US-Format mit Endmarke; ASan fand das Lesen hinter Port-Arrays).
+  `spriteData == NULL` (Marker, Kacheln schon im VRAM) liest nicht mehr Adresse 0. (4) `palet` hat 224 Farben,
+  Weltkarte/Freundesareal lasen 240 (GBA liest Folgedaten) → 224. ASan: beide Brief-Pfade bis in die
+  Donnerhallhöhle sauber; x86 = ARM. Host: `PMD_DUMP_AT=bild` schreibt VRAM/Palette/OAM/IO (`dump_<bild>.bin`).
+  mGBA mit Spielstand: `mCoreLoadSaveFile` nach `reset` + erneutes `reset`; Ports Spielstand ist US-Format, das
+  echte EU-Spiel ignoriert ihn (neues Spiel). Achtung bei Skripten mit `| head` hinter mgba_ref: SIGPIPE beendet es.
 - 0.1.17 (Mikes `run6`, 0.1.16: Absturz nach dem ersten Brief, Titel-Spiegelung nicht über die ganze Breite,
   Geckarbor-Level-up französisch, Fragebogen englisch, Pixelfehler vor „Neues Spiel“, Level-up englisch):
   **Referenz-Emulator**: `libmgba-dev` (apt) + Scratchpad `ref/mgba_ref.c` (gleiches Skriptformat, `REF_SHOT`,

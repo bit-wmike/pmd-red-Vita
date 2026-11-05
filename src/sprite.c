@@ -1,5 +1,8 @@
 #include "global.h"
 #ifdef PORT
+#include "port/port.h"
+#endif
+#ifdef PORT
 #include "port/port_view.h"
 #endif
 #include "globaldata.h"
@@ -500,6 +503,12 @@ static void sub_800533C(const ax_pose *const *a0, const ax_sprite *const *a1, ax
     const ax_pose *r4;
 
     r4 = a0[a2->poseId];
+#ifdef PORT
+    /* only the user's ROM files (the European format) need the pose-end
+     * check; the port's own copies end every pose with a marker, and
+     * their tables are arrays that must not be read past */
+    const int sPosesInRom = (const unsigned char *)a0 >= gHostRom && (const unsigned char *)a0 < gHostRom + gHostRomSize;
+#endif
     sCharMemCursor = OBJ_VRAM0 + (a2->vramTileOrMaybeAnimTimer * 0x20);
     for (mem = NULL; (u16)r4->sprite != 0xFFFF || *((u16*)&r4->unk2) != 0xFFFF; r4++, mem = NULL) {
 #ifdef PORT
@@ -516,7 +525,7 @@ static void sub_800533C(const ax_pose *const *a0, const ax_sprite *const *a1, ax
         /* Port: the European world map markers (wmapspr) have one entry
          * per pose and no end marker: a pose ends where the next one starts,
          * and the last one after one entry when its table is one-entry */
-        if (r4 + 1 == a0[a2->poseId + 1] || (a2->poseId > 0 && r4 == a0[a2->poseId] && a0[a2->poseId] == a0[a2->poseId - 1] + 1))
+        if (sPosesInRom && (r4 + 1 == a0[a2->poseId + 1] || (a2->poseId > 0 && r4 == a0[a2->poseId] && a0[a2->poseId] == a0[a2->poseId - 1] + 1)))
             break;
 #endif
     }

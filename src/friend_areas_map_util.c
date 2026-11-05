@@ -194,7 +194,11 @@ static bool8 FadeScreen(void)
         }
 
         color = (void *)gFriendAreasMapPtr->unk0[1]->data;
+#ifdef PORT
+        for (i = 0; i < 224; color++, i++) { /* "palet" has 224 colours (see world_map.c) */
+#else
         for (i = 0; i < 240; color++, i++) {
+#endif
             SetBGPaletteBufferColorRGB(i + 256, color, gFriendAreasMapPtr->brightness, NULL);
         }
 
