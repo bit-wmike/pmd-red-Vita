@@ -551,13 +551,73 @@ const void *Port_RomPtr(const void *p)
     return p;
 }
 
+/* Compressed file contents (AT4PX, AT4PN, ATUPX, PKDPX) hold no pointers;
+ * the decomp still wrote some words of them as `.4byte gUnknown_...`
+ * because they look like ROM addresses (336 words in 40 files of
+ * system_sbin.s, the level curves lvmp*** among them). Such a relocation
+ * must not be applied: it destroys the compressed stream and the
+ * decompressor runs wild (the freeze when the first dungeon starts). */
+int Port_IsCompressedMagic(const unsigned char *p)
+{
+    return memcmp(p, "AT4P", 4) == 0 || memcmp(p, "ATUP", 4) == 0 || memcmp(p, "PKDP", 4) == 0;
+}
+
+/* Is `where` inside the compressed content of a SIRO file of the port's
+ * data (the file's header within the first 16 bytes of its block)? */
+static int InCompressedContent(const unsigned char *where)
+{
+    size_t lo = 0, hi = sByAddressCount;
+    const unsigned char *dst;
+    unsigned off;
+    while (lo < hi) {
+        size_t mid = (lo + hi) / 2;
+        if (sByAddress[mid]->dst + sByAddress[mid]->size <= where)
+            lo = mid + 1;
+        else
+            hi = mid;
+    }
+    if (lo >= sByAddressCount || sByAddress[lo]->dst > where)
+        return 0;
+    dst = sByAddress[lo]->dst;
+    for (off = 0; off + 20 <= sByAddress[lo]->size && off <= 12; off += 4)
+        if (memcmp(dst + off, "SIRO", 4) == 0)
+            return Port_IsCompressedMagic(dst + off + 16) && where >= dst + off + 16;
+    return 0;
+}
+
 static void Relocate(void)
 {
-    unsigned i;
+    unsigned i, skipped = 0;
     for (i = 0; i < gPortRelocCount; i++) {
         uint32_t v = (uint32_t)(uintptr_t)(gPortRelocs[i].target + gPortRelocs[i].addend);
+        if (InCompressedContent(gPortRelocs[i].where)) {
+            skipped++;
+            continue;
+        }
         memcpy(gPortRelocs[i].where, &v, 4);
     }
+    if (skipped || getenv("PMD_RELOC_DEBUG"))
+        Platform_Log("assets: %u relocations inside compressed files left alone (%u relocations, %u blocks by address)\n", skipped, gPortRelocCount, (unsigned)sByAddressCount);
+#ifndef __vita__
+    if (getenv("PMD_RELOC_DEBUG")) {
+        size_t k;
+        unsigned siro = 0, comp = 0;
+        for (k = 0; k < sByAddressCount; k++) {
+            const unsigned char *dst = sByAddress[k]->dst;
+            unsigned off;
+            for (off = 0; off + 20 <= sByAddress[k]->size && off <= 12; off += 4)
+                if (memcmp(dst + off, "SIRO", 4) == 0) {
+                    siro++;
+                    if (Port_IsCompressedMagic(dst + off + 16))
+                        comp++;
+                    else if (siro < 6)
+                        Platform_Log("assets: %s: SIRO at %u, content %02x%02x%02x%02x\n", sByAddress[k]->name, off, dst[off + 16], dst[off + 17], dst[off + 18], dst[off + 19]);
+                    break;
+                }
+        }
+        Platform_Log("assets: %u SIRO blocks, %u compressed\n", siro, comp);
+    }
+#endif
 }
 
 int Port_LoadRom(unsigned char *rom, size_t size)
@@ -663,8 +723,8 @@ int Port_LoadRom(unsigned char *rom, size_t size)
         }
     }
     gPortAssetsMissing = (unsigned)missing;
+    BuildAddressIndex(); /* before Relocate: it looks blocks up by address */
     Relocate();
-    BuildAddressIndex();
 #ifndef __vita__
     {
         const char *dbg = getenv("PMD_ASSET_DEBUG");

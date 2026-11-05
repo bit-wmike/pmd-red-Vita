@@ -38,6 +38,9 @@
 #include "move_orb_actions_1.h"
 #include "move_orb_effects_2.h"
 #include "move_orb_effects_4.h"
+#ifdef PORT
+#include "port/port_view.h"
+#endif
 
 void sub_807FA18(void)
 {
@@ -97,7 +100,11 @@ void sub_807FA9C(void)
             if (r6) {
                 s32 spriteX = (x * 24) - gDungeon->unk181e8.cameraPixelPos.x;
                 s32 spriteY = (y * 24) - gDungeon->unk181e8.cameraPixelPos.y;
+#ifdef PORT
+                if (spriteX >= -32 - gPortViewMarginLeft && spriteY >= -32 - gPortViewMarginTop && spriteX <= 272 + gPortViewMarginRight && spriteY <= 192 + gPortViewMarginBottom) {
+#else
                 if (spriteX >= -32 && spriteY >= -32 && spriteX <= 272 && spriteY <= 192)  {
+#endif
                     SpriteSetObjMode(&gUnknown_202EDC0, 0);
                     SpriteSetY(&gUnknown_202EDC0, spriteY);
                     SpriteSetX(&gUnknown_202EDC0, spriteX);
@@ -105,7 +112,13 @@ void sub_807FA9C(void)
                     SpriteSetPalNum(&gUnknown_202EDC0, 10);
                     SpriteSetTileNum(&gUnknown_202EDC0, 0x1FC);
 
+                    #ifdef PORT
+                    gPortSpriteWorld = 1;
+                    #endif
                     AddSprite(&gUnknown_202EDC0, 0, NULL, NULL);
+                    #ifdef PORT
+                    gPortSpriteWorld = 0;
+                    #endif
                 }
             }
         }

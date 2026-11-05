@@ -66,6 +66,8 @@ void Port_RelocateRomFile(const unsigned char *data, unsigned size);
 int Port_AssetStateAt(const void *p, unsigned *holes);
 /* Pointer slots of that block from p on (holes of at most 64 bytes). */
 unsigned Port_AssetPointersFrom(const void *p);
+/* AT4PX / AT4PN / ATUPX / PKDPX: compressed file content (no pointers inside). */
+int Port_IsCompressedMagic(const unsigned char *p);
 void PortAssets_RegisterAll(void);
 
 #endif

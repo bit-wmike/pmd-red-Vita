@@ -758,7 +758,13 @@ static void sub_803EDF0(void)
         SpriteSetUnk6_1(&gUnknown_202EDDC, 0);
         SpriteSetUnk6_2(&gUnknown_202EDDC, 0);
 
+        #ifdef PORT
+        gPortSpriteWorld = 1;
+        #endif
         AddSprite(&gUnknown_202EDDC, 0x100, NULL, NULL);
+        #ifdef PORT
+        gPortSpriteWorld = 0;
+        #endif
     }
 }
 

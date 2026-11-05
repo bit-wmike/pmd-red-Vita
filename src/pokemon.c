@@ -1,5 +1,8 @@
 #ifdef PORT
 #include "../port/port_text.h"
+#ifdef PORT
+#include "port/port_view.h"
+#endif
 #endif
 #include "global.h"
 #include "globaldata.h"
@@ -1379,7 +1382,13 @@ bool8 AddShadowSprite(s32 species_, DungeonPos *shadowPos, axdata *axData)
         SpriteSetX(&sShadowSprites[shadowSize], x);
         SpriteSetY(&sShadowSprites[shadowSize], y);
 
+        #ifdef PORT
+        gPortSpriteWorld = 1;
+        #endif
         AddSprite(&sShadowSprites[shadowSize], 0, NULL, NULL);
+        #ifdef PORT
+        gPortSpriteWorld = 0;
+        #endif
     }
 
     return TRUE;

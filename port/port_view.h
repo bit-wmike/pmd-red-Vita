@@ -33,6 +33,12 @@ void Port_ViewSceneFrame(int scene);
 int Port_ViewScene(void); /* the current PORT_SCENE_* */
 /* A sprite was staged at index `index` with the true GBA-screen position. */
 void Port_SpriteStaged(int index, int x, int y);
+/* 1 while AddSprite() places a world sprite (shadows, traps, floor
+ * markers); everything else through AddSprite() is screen UI (menu
+ * cursors, portraits, text icons) and keeps the GBA screen's place in the
+ * frame instead of following the world window. */
+extern int gPortSpriteWorld;
+void Port_SpriteStagedUi(int index, int ui);
 /* The staged sprite `index` was written to OAM slot `slot`. */
 void Port_OamSlot(int slot, int index);
 

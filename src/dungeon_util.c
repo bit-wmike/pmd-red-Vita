@@ -28,6 +28,9 @@
 #include "trap.h"
 #include "dungeon_data.h"
 #include "dungeon_strings.h"
+#ifdef PORT
+#include "port/port_view.h"
+#endif
 
 EWRAM_DATA u8 gUnknown_202EE70[MAX_TEAM_BODY_SIZE] = {0};
 EWRAM_DATA u8 gUnknown_202EE76[DUNGEON_MAX_WILD_POKEMON_BODY_SIZE] = {0};
@@ -441,7 +444,13 @@ bool8 ShouldDisplayEntity(Entity *ent)
         s32 x = (ent->pixelPos.x / 256) - gDungeon->unk181e8.cameraPixelPos.x;
         s32 y = (ent->pixelPos.y / 256) - gDungeon->unk181e8.cameraPixelPos.y;
 
+#ifdef PORT
+        /* Port: the Full View shows more of the floor around the GBA
+         * screen; monsters, items and traps there must be drawn too */
+        if (x >= -32 - gPortViewMarginLeft && y >= -32 - gPortViewMarginTop && x <= 272 + gPortViewMarginRight && y <= 192 + gPortViewMarginBottom) {
+#else
         if (x >= -32 && y >= -32 && x <= 272 && y <= 192) {
+#endif
             UnkDungeonGlobal_unk181E8_sub *saveTyping = &gDungeon->unk181e8;
 
             switch (GetEntityType(ent)) {

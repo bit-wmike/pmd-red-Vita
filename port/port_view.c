@@ -78,6 +78,9 @@ static uint16_t sShadow[4][32 * SHADOW_COLS];
 /* Per staged sprite / OAM slot: true GBA-screen position. */
 static short sStagedX[128], sStagedY[128];
 static short sSlotX[128], sSlotY[128];
+static unsigned char sStagedUi[128], sSlotUi[128]; /* screen UI sprite: anchored at the frame's GBA rectangle */
+int gPortSpriteWorld;
+static int sUiDx, sUiDy; /* the GBA screen's place for UI layers: centred in the frame */
 
 #define IO16(off) (*(volatile u16 *)(gHostIo + (off)))
 
@@ -104,6 +107,12 @@ void Port_SpriteStaged(int index, int x, int y)
     sStagedY[index] = (short)y;
 }
 
+void Port_SpriteStagedUi(int index, int ui)
+{
+    if (index >= 0 && index < 128)
+        sStagedUi[index] = (unsigned char)ui;
+}
+
 static uint32_t sSlotFrame[128]; /* the frame a slot was last staged in */
 
 void Port_OamSlot(int slot, int index)
@@ -113,10 +122,12 @@ void Port_OamSlot(int slot, int index)
     if (index < 0 || index >= 128) {
         sSlotX[slot] = PORT_GBA_W / 2;
         sSlotY[slot] = PORT_GBA_H / 2;
+        sSlotUi[slot] = 0;
         return;
     }
     sSlotX[slot] = sStagedX[index];
     sSlotY[slot] = sStagedY[index];
+    sSlotUi[slot] = sStagedUi[index];
     sSlotFrame[slot] = Port_FrameCounter() + 1;
 }
 
@@ -270,6 +281,7 @@ static int PictureMapName(const char *name)
     return n >= 4 && name[0] == 'S' && name[1] >= '0' && name[1] <= '9' && name[2] >= '0' && name[2] <= '9' && name[n - 1] == 'c';
 }
 
+
 /* The ground map's camera (top-left of the GBA screen) and map size. */
 static int GroundInfo(int *camX, int *camY, int *mapW, int *mapH, int *wrap)
 {
@@ -282,9 +294,10 @@ static int GroundInfo(int *camX, int *camY, int *mapW, int *mapH, int *wrap)
         return 0;
     if (UniformMap(&g->mapRender[0]))
         return 0;
-    if (g->bpcFile != NULL && g->bpcFile->file != NULL && g->bpcFile->file->name != NULL &&
-        PictureMapName((const char *)g->bpcFile->file->name))
-        sPictureMap = 1;
+    if (g->bpcFile != NULL && g->bpcFile->file != NULL && g->bpcFile->file->name != NULL) {
+        if (PictureMapName((const char *)g->bpcFile->file->name))
+            sPictureMap = 1;
+    }
     *camX = cam.x;
     *camY = cam.y;
     *mapW = g->mapRender[0].mapSizePixels.x;
@@ -517,7 +530,8 @@ static void FillUi(int bg, uint16_t outside, int cols)
 {
     const uint16_t *vram = (const uint16_t *)(gHostVram + 0x6000 + bg * 0x800);
     int hofs = IO16(0x10 + bg * 4) & 0x1FF, vofs = IO16(0x12 + bg * 4) & 0x1FF;
-    int fine = (hofs - sDx) & 7;
+    int dx = bg < 2 ? sUiDx : sDx; /* text layers keep the frame's centre */
+    int fine = (hofs - dx) & 7;
     uint16_t *shadow = sShadow[bg];
     int r, c;
 
@@ -527,7 +541,7 @@ static void FillUi(int bg, uint16_t outside, int cols)
         int gy = ((8 * r - vofs) % 256 + 256) % 256;
         int rowVisible = gy < PORT_GBA_H || gy > 248;
         for (c = 0; c < cols; c++) {
-            int gx = 8 * c - fine - sDx; /* GBA x of the column's first pixel */
+            int gx = 8 * c - fine - dx; /* GBA x of the column's first pixel */
             int vcol = ((gx + hofs) >> 3) & 31;
             /* BG0 column 0 holds the game's black edge tile (0x279), a
              * mask for the GBA screen border: not part of the picture. */
@@ -641,10 +655,13 @@ void Port_ViewBeforeRender(int *width, int *height)
         cols = SHADOW_COLS;
     virtuappu_mode1_ws_full_view = 1;
 
-    /* UI layers at the GBA screen position */
+    /* UI layers (text, boxes, menus) at the GBA screen's place in the
+     * frame's centre, whatever the world window does at a map's edge */
+    sUiDx = (sWidth - PORT_GBA_W) / 2;
+    sUiDy = (sHeight - PORT_GBA_H) / 2;
     for (i = 0; i < 2; i++) {
-        virtuappu_mode1_bg_dx[i] = (-sDx) & 0x1FF;
-        virtuappu_mode1_bg_dy[i] = (-sDy) & 0x1FF;
+        virtuappu_mode1_bg_dx[i] = (-sUiDx) & 0x1FF;
+        virtuappu_mode1_bg_dy[i] = (-sUiDy) & 0x1FF;
     }
     FillUi(0, BLANK_ENTRY, cols);
     /* BG1 carries the darkness: the game hides it inside its window. A
@@ -749,8 +766,8 @@ void Port_ViewBeforeRender(int *width, int *height)
     virtuappu_mode1_line_dy = sDy;
     virtuappu_mode1_obj_port = 1;
     for (i = 0; i < 128; i++) {
-        virtuappu_mode1_obj_dx[i] = (int16_t)sDx;
-        virtuappu_mode1_obj_dy[i] = (int16_t)sDy;
+        virtuappu_mode1_obj_dx[i] = (int16_t)(sSlotUi[i] ? sUiDx : sDx);
+        virtuappu_mode1_obj_dy[i] = (int16_t)(sSlotUi[i] ? sUiDy : sDy);
         virtuappu_mode1_obj_base_x[i] = sSlotX[i];
         virtuappu_mode1_obj_base_y[i] = sSlotY[i];
         /* a slot the game's sprite system did not fill this frame (or the
@@ -758,6 +775,23 @@ void Port_ViewBeforeRender(int *width, int *height)
         virtuappu_mode1_obj_staged[i] = sSlotFrame[i] + 2 > Port_FrameCounter() + 1 && sSlotFrame[i] != 0;
     }
     DumpState();
+#ifndef __vita__
+    {
+        static int viewLog = -1;
+        static char last[160];
+        char line[160];
+        if (viewLog < 0)
+            viewLog = getenv("PMD_VIEW_LOG") != NULL;
+        if (viewLog) {
+            snprintf(line, sizeof(line), "scene %d content %dx%d dx %d dy %d picture %d map %s", sSceneLatched, sContentW, sContentH, sDx, sDy, sPictureMap,
+                     (gGroundMapDungeon_3001B70 && gGroundMapDungeon_3001B70->bpcFile && gGroundMapDungeon_3001B70->bpcFile->file) ? (const char *)gGroundMapDungeon_3001B70->bpcFile->file->name : "-");
+            if (strcmp(line, last) != 0) {
+                Platform_Log("view %u: %s\n", Port_FrameCounter(), line);
+                strncpy(last, line, sizeof(last) - 1);
+            }
+        }
+    }
+#endif
     *width = sWidth;
     *height = sHeight;
 }

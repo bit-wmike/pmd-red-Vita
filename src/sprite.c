@@ -250,6 +250,7 @@ void AddAxSprite(const ax_pose *axPose, const axdata1 *axData, const ax_sprite *
         if (pos >= DISPLAY_HEIGHT + gPortViewMarginBottom)
             return;
         Port_SpriteStaged(sSpriteCount, portX, pos);
+        Port_SpriteStagedUi(sSpriteCount, 0);
     }
 #else
     if (pos < -64)
@@ -317,6 +318,7 @@ void AddSprite(SpriteOAM *a0, s32 a1, ax_sprite *a2, unkStruct_2039DB0 *spriteMa
         s32 trueX = 120 + (((rawX - 120 + 256) & 511) - 256);
         s32 trueY = (s32)((yPos & 0xFFF) << 20) >> 20;
         Port_SpriteStaged(sSpriteCount, trueX, trueY);
+        Port_SpriteStagedUi(sSpriteCount, !gPortSpriteWorld);
     }
 #endif
     yPos &= SPRITEOAM_MAX_Y;

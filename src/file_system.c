@@ -54,6 +54,12 @@ static const File *Port_ChooseFile(const File *file, s32 cursor)
         Platform_Log("file: %s is not in the user's ROM; using the port's copy (state %d)\n", file->name, state);
         return file;
     }
+    /* compressed content holds no pointers, whatever the decomp's copy
+     * says (its `.4byte` words inside the stream are artefacts) */
+    if (rom[0] == 'S' && rom[1] == 'I' && rom[2] == 'R' && rom[3] == 'O' && Port_IsCompressedMagic(rom + 16)) {
+        holes = 1;
+        contentHoles = 0;
+    }
     /* pointers inside (charmaps, parameter tables; the port's copy tells
      * whether the file has any): translated by their look, as the GBA
      * format keeps absolute ROM addresses. A SIRO header alone counts as
