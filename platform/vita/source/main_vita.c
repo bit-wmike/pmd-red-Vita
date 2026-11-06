@@ -40,6 +40,7 @@
 #include "port/port_view.h"
 #include "port/port_config.h"
 #include "port/port_game.h"
+#include "port/port_panel.h"
 #include "cpu/mode1.h"
 
 #define DATA_DIR "ux0:data/pmd"
@@ -79,6 +80,12 @@ void Platform_Log(const char *fmt, ...)
     va_end(ap);
     fflush(sLog);
 }
+
+/* Watchdog (see WatchdogThread): a game frame beat, the port menus pause it,
+ * and the last platform call entered by the game thread. */
+static volatile unsigned sWdBeat;
+static volatile int sWdPause;
+static const char *volatile sWdWhere = "start";
 
 /* -------------------------------------------------------------- video */
 
@@ -286,6 +293,247 @@ static void WaitDue(void)
         sceDisplayWaitVblankStart();
 }
 
+
+/* ------------------------------------------------------------ panels */
+
+/* Panels in the screen's margins beside the game image (settings
+ * "side_panels"): right the clock, play time and the dungeon's status,
+ * left the floor bar of the dungeon with the floors of accepted jobs. The
+ * data comes from port/port_panel.c (filled at VBlank on this thread). A
+ * short tap on the left margin opens the job overview (RunJobOverview). */
+#define PANEL_MIN_W 44 /* narrower margins: no panels (smooth/sharp fill the width) */
+#define PANEL_BG RGBA8(0, 0, 0, 150)
+#define PANEL_TEXT RGBA8(235, 235, 235, 255)
+#define PANEL_DIM RGBA8(150, 150, 150, 255)
+#define PANEL_HEAD RGBA8(255, 205, 90, 255)
+#define PANEL_OPEN RGBA8(255, 140, 40, 255)
+#define PANEL_DONE RGBA8(90, 220, 90, 255)
+#define PANEL_ITEM RGBA8(250, 220, 70, 255)
+
+static float sGameX, sGameY, sGameW = 960, sGameH = 544; /* the game image on screen (last DrawGame) */
+
+/* Text centred in [x, x+w) with its baseline at y, scaled down to fit. */
+static void PanelText(float x, float w, int y, unsigned color, float scale, const char *text)
+{
+    int tw = vita2d_pgf_text_width(sFont, scale, text);
+    if (tw > w - 2 && tw > 0) {
+        scale *= (w - 2) / tw;
+        tw = vita2d_pgf_text_width(sFont, scale, text);
+    }
+    vita2d_pgf_draw_text(sFont, (int)(x + (w - tw) / 2), y, color, scale, text);
+}
+
+/* Words wrapped to lines of width w, centred; returns the y after the text. */
+static int PanelWrap(float x, float w, int y, unsigned color, float scale, int lineH, const char *text, int maxLines)
+{
+    char line[64];
+    const char *p = text;
+    int lines = 0;
+    while (*p && lines < maxLines) {
+        int len = 0, best = 0;
+        /* longest run of whole words that fits; at least one word */
+        for (;;) {
+            int end = len;
+            while (p[end] == ' ')
+                end++;
+            while (p[end] && p[end] != ' ')
+                end++;
+            if (end == len || end >= (int)sizeof(line))
+                break;
+            memcpy(line, p, (size_t)end);
+            line[end] = 0;
+            if (best > 0 && vita2d_pgf_text_width(sFont, scale, line) > w - 2)
+                break;
+            best = len = end;
+            if (!p[end])
+                break;
+        }
+        if (best == 0)
+            break;
+        memcpy(line, p, (size_t)best);
+        line[best] = 0;
+        PanelText(x, w, y, color, scale, line);
+        y += lineH;
+        lines++;
+        p += best;
+        while (*p == ' ')
+            p++;
+    }
+    return y;
+}
+
+static void DrawCheck(float x, float y, float s, unsigned color)
+{
+    /* a tick in the box (x, y, s, s), two pixels thick */
+    float i;
+    for (i = 0; i < 2; i++) {
+        vita2d_draw_line(x + s * 0.12f, y + s * 0.55f + i, x + s * 0.4f, y + s * 0.85f + i, color);
+        vita2d_draw_line(x + s * 0.4f, y + s * 0.85f + i, x + s * 0.9f, y + s * 0.15f + i, color);
+    }
+}
+
+static void DrawRightPanel(const struct PortPanel *p, float x, float w)
+{
+    char buf[48];
+    int y = 30;
+    vita2d_draw_rectangle(x + 3, 4, w - 6, 536, PANEL_BG);
+    x += 3;
+    w -= 6;
+    PanelText(x, w, y, PANEL_TEXT, 1.05f, p->clock);
+    y += 18;
+    PanelText(x, w, y, PANEL_DIM, 0.7f, p->playTime);
+    y += 24;
+    if (p->inDungeon) {
+        /* the dungeon's name is in the frame above the game, the floor in
+         * the floor bar on the left (Mike) */
+        vita2d_draw_rectangle(x + 4, y - 10, w - 8, 1, PANEL_DIM);
+        y += 8;
+        if (p->maxBelly > 0) {
+            PanelText(x, w, y, PANEL_DIM, 0.6f, "Bauch");
+            y += 17;
+            snprintf(buf, sizeof(buf), "%d/%d", p->belly, p->maxBelly);
+            PanelText(x, w, y, p->belly * 5 <= p->maxBelly ? PANEL_OPEN : PANEL_TEXT, 0.8f, buf);
+            y += 26;
+        }
+        if (p->weather[0]) {
+            PanelText(x, w, y, PANEL_DIM, 0.6f, "Wetter");
+            y += 17;
+            PanelText(x, w, y, PANEL_TEXT, 0.7f, p->weather);
+            y += 26;
+        }
+    } else {
+        y += 8;
+    }
+    /* the bag instead of the money (Mike: the bag is what needs managing) */
+    PanelText(x, w, y, PANEL_DIM, 0.6f, "Beutel");
+    y += 17;
+    snprintf(buf, sizeof(buf), "%d/%d", p->bagCount, p->bagMax);
+    PanelText(x, w, y, p->bagCount >= p->bagMax ? PANEL_OPEN : p->bagCount >= p->bagMax - 2 ? PANEL_HEAD : PANEL_TEXT,
+              0.8f, buf);
+}
+
+static void DrawFloorBar(const struct PortPanel *p, float x, float w)
+{
+    char buf[16];
+    int n = p->floorCount, f, top = 46, bottom = 482;
+    float rowH, avail = (float)(bottom - top);
+    PanelText(x, w, 30, PANEL_HEAD, 0.6f, "Etagen");
+    if (p->floorMarks[0]) {
+        /* an item to find: anywhere in the dungeon */
+        vita2d_pgf_draw_text(sFont, (int)x + 6, 518 - 22, PANEL_TEXT, 0.55f, "Item");
+        if (p->floorMarks[0] & PORT_FLOOR_OPEN) {
+            vita2d_draw_fill_circle(x + w - 9, 518 - 27, 5, PANEL_OPEN);
+        } else if (p->floorMarks[0] & PORT_FLOOR_DONE) {
+            DrawCheck(x + w - 15, 518 - 33, 11, PANEL_DONE);
+        } else {
+            vita2d_draw_fill_circle(x + w - 9, 518 - 27, 5, PANEL_DIM);
+            vita2d_draw_fill_circle(x + w - 9, 518 - 27, 3, RGBA8(20, 20, 20, 255));
+        }
+    }
+    if (n < 1)
+        return;
+    rowH = avail / n;
+    if (rowH > 36)
+        rowH = 36;
+    for (f = 1; f <= n; f++) {
+        /* deeper is lower: floor 1 at the top going down, at the bottom going up */
+        int slot = p->stairsUp ? n - f : f - 1;
+        float ry = top + slot * rowH, rh = rowH > 3 ? rowH - 1 : rowH;
+        unsigned fill = f == p->floor ? RGBA8(250, 200, 70, 230) : f < p->floor ? RGBA8(90, 90, 100, 200) : RGBA8(45, 45, 55, 200);
+        float mx = x + w - 13;
+        vita2d_draw_rectangle(x + 4, ry, w - 8, rh, fill);
+        if (rowH >= 11 && (n <= 30 || f == 1 || f == p->floor || f % 5 == 0)) {
+            snprintf(buf, sizeof(buf), "%d", f);
+            vita2d_pgf_draw_text(sFont, (int)x + 7, (int)(ry + rh / 2 + 5 * (rowH >= 16 ? 1.0f : 0.7f)),
+                                 f == p->floor ? RGBA8(20, 20, 20, 255) : PANEL_TEXT, rowH >= 16 ? 0.62f : 0.45f, buf);
+        }
+        if (p->floorMarks[f] & PORT_FLOOR_OPEN) {
+            if (rowH >= 8)
+                vita2d_draw_fill_circle(mx + 4, ry + rh / 2, rowH >= 14 ? 5.0f : 3.0f, PANEL_OPEN);
+            else
+                vita2d_draw_rectangle(x + w - 10, ry, 6, rh, PANEL_OPEN);
+        } else if (p->floorMarks[f] & PORT_FLOOR_DONE) {
+            if (rowH >= 10)
+                DrawCheck(mx - 1, ry + rh / 2 - 5, 11, PANEL_DONE);
+            else
+                vita2d_draw_rectangle(x + w - 10, ry, 6, rh, PANEL_DONE);
+        } else if (p->floorMarks[f] & PORT_FLOOR_INACTIVE) {
+            /* a job here that is not taken in the job list: a grey ring */
+            if (rowH >= 8) {
+                vita2d_draw_fill_circle(mx + 4, ry + rh / 2, rowH >= 14 ? 5.0f : 3.0f, PANEL_DIM);
+                vita2d_draw_fill_circle(mx + 4, ry + rh / 2, rowH >= 14 ? 3.0f : 1.5f, fill | 0xFF000000u);
+            }
+        }
+    }
+    /* the current floor: a marker beside the bar */
+    if (p->floor >= 1 && p->floor <= n) {
+        int slot = p->stairsUp ? n - p->floor : p->floor - 1;
+        float cy = top + slot * rowH + (rowH - 1) / 2;
+        vita2d_draw_rectangle(x, cy - 3, 3, 6, RGBA8(250, 200, 70, 255));
+    }
+}
+
+static void DrawLeftPanel(const struct PortPanel *p, float x, float w)
+{
+    char buf[32];
+    vita2d_draw_rectangle(x + 3, 4, w - 6, 536, PANEL_BG);
+    x += 3;
+    w -= 6;
+    if (p->inDungeon) {
+        DrawFloorBar(p, x, w);
+    } else {
+        int i, open = 0, done = 0, y = 30;
+        for (i = 0; i < p->jobCount; i++) {
+            if (p->jobs[i].status == PORT_JOBST_OPEN || p->jobs[i].status == PORT_JOBST_ITEM)
+                open++;
+            else if (p->jobs[i].status != PORT_JOBST_SUSPENDED)
+                done++;
+        }
+        PanelText(x, w, y, PANEL_HEAD, 0.6f, "Jobs");
+        y += 30;
+        snprintf(buf, sizeof(buf), "%d/8", p->jobCount);
+        PanelText(x, w, y, PANEL_TEXT, 0.9f, buf);
+        y += 30;
+        if (open) {
+            vita2d_draw_fill_circle(x + 12, y - 5, 5, PANEL_OPEN);
+            snprintf(buf, sizeof(buf), "%d", open);
+            vita2d_pgf_draw_text(sFont, (int)x + 24, y, PANEL_TEXT, 0.75f, buf);
+            y += 24;
+        }
+        if (done) {
+            DrawCheck(x + 6, y - 11, 12, PANEL_DONE);
+            snprintf(buf, sizeof(buf), "%d", done);
+            vita2d_pgf_draw_text(sFont, (int)x + 24, y, PANEL_TEXT, 0.75f, buf);
+        }
+    }
+    /* the tap target's label at the bottom */
+    PanelText(x, w, 516, PANEL_DIM, 0.5f, "Tippen:");
+    PanelText(x, w, 530, PANEL_DIM, 0.5f, "Jobs");
+}
+
+/* After the game image: the panels when both margins are wide enough. */
+static void DrawPanels(void)
+{
+    const struct PortPanel *p = Port_PanelGet();
+    float left = sGameX, right = 960.0f - (sGameX + sGameW);
+    int on = gPortConfig.sidePanels && left >= PANEL_MIN_W && right >= PANEL_MIN_W;
+    Port_PanelEnable(on);
+    gPortPanelsVisible = on;
+    if (!on || p->serial == 0)
+        return;
+    DrawLeftPanel(p, 0, left);
+    DrawRightPanel(p, sGameX + sGameW, right);
+    if (p->inDungeon && p->dungeonName[0] && sGameY >= 20) {
+        /* the dungeon's name centred in the frame above the game (room for
+         * the long names of later dungeons) */
+        float scale = sGameY >= 30 ? 0.95f : 0.75f;
+        int tw = vita2d_pgf_text_width(sFont, scale, p->dungeonName);
+        int tx = (int)(sGameX + (sGameW - tw) / 2);
+        vita2d_draw_rectangle((float)tx - 10, 3, (float)tw + 20, sGameY - 6, PANEL_BG);
+        vita2d_pgf_draw_text(sFont, tx, (int)(sGameY / 2 + 8 * scale), PANEL_HEAD, scale, p->dungeonName);
+    }
+}
+
 static int sLastW = 240, sLastH = 160, sLastZoom = 160;
 
 static void DrawGame(void)
@@ -300,6 +548,10 @@ static void DrawGame(void)
     }
     dx = (float)(int)((960.0f - width * scale) / 2.0f);
     dy = (float)(int)((544.0f - height * scale) / 2.0f);
+    sGameX = dx;
+    sGameY = dy;
+    sGameW = width * scale;
+    sGameH = height * scale;
 
     if (gPortConfig.displayStyle == PORT_STYLE_SHARP) {
         /* nearest-neighbour to 3x, then a smooth scale to the screen */
@@ -322,6 +574,7 @@ static void DrawGame(void)
         vita2d_texture_set_filters(sTex, f, f);
         vita2d_draw_texture_part_scale(sTex, dx, dy, 0, 0, (float)width, (float)height, scale, scale);
     }
+    DrawPanels();
 }
 
 static void DrawToast(void)
@@ -339,6 +592,7 @@ void Platform_Present(const uint32_t *pixels, int width, int height, int pitch, 
     unsigned stride;
     int y;
 
+    sWdWhere = "Platform_Present (vita2d)";
     PerfFrame(sceKernelGetProcessTimeWide());
     vita2d_wait_rendering_done();
     dst = (uint8_t *)vita2d_texture_get_datap(sTex);
@@ -356,6 +610,7 @@ void Platform_Present(const uint32_t *pixels, int width, int height, int pitch, 
     WaitDue();
     vita2d_swap_buffers();
     sLastPresentEnd = sceKernelGetProcessTimeWide();
+    sWdWhere = "game logic (after present)";
 }
 
 static void ShowMessage(const char *title, const char *text)
@@ -467,7 +722,7 @@ static const char *const sLangNames[PORT_LANG_COUNT] = {"Englisch", "Deutsch", "
  * changed in the port menu only, so that it never gets in the way. */
 static void ChooseLanguage(void)
 {
-    static const char *const names[PORT_LANG_COUNT] = {"English", "Deutsch", "Fran\xc3\xa7ais", "Italiano", "Espa\xc3\xb1ol"};
+    static const char *const names[PORT_LANG_COUNT] = {"English", "Deutsch", "Fran\xc3\xa7" "ais", "Italiano", "Espa\xc3\xb1ol"};
     int sel = PORT_LANG_DE;
     unsigned prev = ~0u;
     Platform_Log("[ui] language chooser\n");
@@ -686,6 +941,7 @@ static void RunMenu(void)
     char line[160];
 
     Platform_Log("[ui] menu open\n");
+    sWdPause = 1;
     for (;;) {
         SceCtrlData pad;
         unsigned pressed;
@@ -744,11 +1000,117 @@ static void RunMenu(void)
                  gPortConfig.triangleMove, gPortConfig.rightStickDiag, gPortConfig.turbo,
                  gPortConfig.expMultiplier, gPortConfig.noHunger);
     sAnchored = 0; /* the menu stalled the game: re-anchor the pacing */
+    sWdPause = 0;
+}
+
+
+/* ---- job overview (short tap on the left margin) ---- */
+
+static unsigned JobStatusColor(int status)
+{
+    switch (status) {
+        case PORT_JOBST_OPEN: return PANEL_OPEN;
+        case PORT_JOBST_ITEM: return PANEL_ITEM;
+        case PORT_JOBST_DONE:
+        case PORT_JOBST_REWARD: return PANEL_DONE;
+        default: return PANEL_DIM;
+    }
+}
+
+static int FrontTouched(void)
+{
+    SceTouchData t;
+    return sceTouchPeek(SCE_TOUCH_PORT_FRONT, &t, 1) >= 1 && t.reportNum > 0;
+}
+
+/* The accepted jobs over the paused game: floor, dungeon, what to do, the
+ * client, target and item, and how far the job is. Jobs in the dungeon
+ * being explored come first. Closed by a tap or any button. */
+static void RunJobOverview(void)
+{
+    const struct PortPanel *p;
+    unsigned prev = ~0u;
+    int touchPrev = 1; /* the opening tap may still be on the panel */
+    char line[200];
+
+    Port_PanelRefresh();
+    p = Port_PanelGet();
+    Platform_Log("[ui] job overview open (%d jobs)\n", p->jobCount);
+    sWdPause = 1;
+    for (;;) {
+        SceCtrlData pad;
+        unsigned pressed;
+        int touch, close = 0, i, pass, y;
+
+        sceCtrlPeekBufferPositive(0, &pad, 1);
+        pressed = pad.buttons & ~prev;
+        prev = pad.buttons;
+        touch = FrontTouched();
+        if (touch && !touchPrev)
+            close = 1;
+        touchPrev = touch;
+        if (pressed & (SCE_CTRL_CROSS | SCE_CTRL_CIRCLE | SCE_CTRL_START | SCE_CTRL_TRIANGLE | SCE_CTRL_SQUARE | SCE_CTRL_SELECT))
+            close = 1;
+
+        vita2d_pool_reset();
+        DrawGame();
+        vita2d_draw_rectangle(0, 0, 960, 544, RGBA8(0, 0, 0, 205));
+        if (p->inDungeon)
+            snprintf(line, sizeof(line), "Jobs (%d/8)  -  jetzt: %s %s", p->jobCount, p->dungeonName, p->floorText);
+        else
+            snprintf(line, sizeof(line), "Jobs (%d/8)", p->jobCount);
+        vita2d_pgf_draw_text(sFont, 40, 44, PANEL_HEAD, 1.2f, line);
+        y = 92;
+        if (p->jobCount == 0)
+            vita2d_pgf_draw_text(sFont, 60, y, PANEL_TEXT, 1.0f, "Keine Jobs in der Jobliste.");
+        /* pass 0: this dungeon, pass 1: the others */
+        for (pass = 0; pass < 2; pass++) {
+            for (i = 0; i < p->jobCount; i++) {
+                const struct PortPanelJob *j = &p->jobs[i];
+                unsigned col = JobStatusColor(j->status);
+                int n;
+                if ((pass == 0) != (j->here != 0))
+                    continue;
+                if (j->status == PORT_JOBST_OPEN)
+                    vita2d_draw_fill_circle(52, y - 6, 6, col);
+                else if (j->status == PORT_JOBST_SUSPENDED)
+                    vita2d_draw_rectangle(46, y - 7, 12, 3, col);
+                else
+                    DrawCheck(45, y - 13, 14, col);
+                vita2d_pgf_draw_text(sFont, 70, y, j->here ? PANEL_ITEM : PANEL_TEXT, j->floorText[0] ? 1.0f : 0.7f,
+                                     j->floorText[0] ? j->floorText : "\xc3\xbc" "berall");
+                snprintf(line, sizeof(line), "%s:  %s%s", j->dungeonName, j->what, j->special ? "  (Sonderauftrag)" : "");
+                vita2d_pgf_draw_text(sFont, 140, y, j->here ? PANEL_TEXT : RGBA8(200, 200, 200, 255), 1.0f, line);
+                n = snprintf(line, sizeof(line), "Kunde: %s", j->client[0] ? j->client : "-");
+                if (j->target[0] && j->kind != PORT_JOB_RESCUE_CLIENT && j->kind != PORT_JOB_FIND_ITEM)
+                    n += snprintf(line + n, sizeof(line) - n, "   Ziel: %s", j->target);
+                if (j->item[0])
+                    snprintf(line + n, sizeof(line) - n, "   Item: %s", j->item);
+                vita2d_pgf_draw_text(sFont, 140, y + 22, PANEL_DIM, 0.8f, line);
+                vita2d_pgf_draw_text(sFont, 640, y + 22, col, 0.8f, j->statusText);
+                y += 52;
+            }
+        }
+        vita2d_pgf_draw_text(sFont, 40, 528, PANEL_DIM, 0.8f, "Tippen oder Taste: zur\xc3\xbc" "ck zum Spiel");
+        vita2d_end_drawing();
+        vita2d_wait_rendering_done();
+        vita2d_swap_buffers();
+        sceDisplayWaitVblankStart();
+        if (close)
+            break;
+    }
+    Platform_Log("[ui] job overview closed\n");
+    sAnchored = 0; /* the overview stalled the game: re-anchor the pacing */
+    sWdPause = 0;
 }
 
 /* ---- input ---- */
 
 static int sWaitRelease; /* after the menu: ignore buttons until released */
+#define TAP_FRAMES 15  /* a touch released within this many frames is a tap */
+#define TAP_ZONE_W 64  /* without panels: the tap zone at the screen's left edge */
+static int sTouchFrames, sTouchLeft, sTouchX, sTouchY;
+static int sTouchIgnore; /* the tap that closed the overview: ignored until released */
 /* The rear touch panel is deliberately unused: it is too easy to touch by accident. */
 
 /* crumbs.txt: the last actions of the game, rewritten six times a second (a
@@ -773,11 +1135,53 @@ static int CrumbThread(SceSize args, void *argp)
     return 0;
 }
 
+/* Watchdog: run8 froze in a dungeon without a crash (no frames, not even the
+ * system overlay) and the host could not reproduce it. When the game thread
+ * has not polled the input for 30 s outside the port menus (longer than
+ * the first text index build, ~10 s), this thread
+ * writes watchdog.txt (frame, last platform call, crumbs; with sceIo, as the
+ * stuck thread may hold the stdio lock of log.txt) and then crashes on
+ * purpose: the core dump (ux0:data/ *.psp2dmp) holds the registers and the
+ * stack of every thread, so it shows where the game thread hangs. */
+static int WatchdogThread(SceSize args, void *argp)
+{
+    unsigned last = sWdBeat, still = 0;
+    (void)args; (void)argp;
+    for (;;) {
+        sceKernelDelayThread(500 * 1000);
+        if (sWdPause || sWdBeat != last) {
+            last = sWdBeat;
+            still = 0;
+            continue;
+        }
+        if (++still < 60)
+            continue;
+        {
+            static char buf[2600];
+            int n = snprintf(buf, sizeof(buf), "pmd %s watchdog: no game frame for 30 s, frame %u, in %s\n",
+                             PMD_PORT_VERSION, (unsigned)Port_FrameCounter(), sWdWhere);
+            n += Port_CrumbText(buf + n, (int)sizeof(buf) - n);
+            Platform_WriteFile("watchdog.txt", buf, (size_t)n);
+            sceKernelDelayThread(200 * 1000);
+            *(volatile int *)0 = 0x57444f47; /* "WDOG": core dump with all threads */
+        }
+    }
+    return 0;
+}
+
 static void WriteCrumbs(void)
 {
     static unsigned sCount;
     static int sThreadState; /* 0 = not started, 1 = running, -1 = failed */
+    static int sWdStarted;
     int n;
+    sWdBeat++;
+    if (!sWdStarted) {
+        SceUID wd = sceKernelCreateThread("pmd_watchdog", WatchdogThread, 0x10000100 - 10, 0x2000, 0, 0, NULL);
+        sWdStarted = 1;
+        if (wd >= 0)
+            sceKernelStartThread(wd, 0, NULL);
+    }
     if (++sCount % 10)
         return;
     if (sThreadState == 0) {
@@ -808,6 +1212,7 @@ uint16_t Platform_PollKeys(void)
     SceCtrlData pad;
     uint16_t keys = 0;
 
+    sWdWhere = "game logic/rendering (after input)";
     WriteCrumbs();
 
     sceCtrlPeekBufferPositive(0, &pad, 1);
@@ -847,11 +1252,40 @@ uint16_t Platform_PollKeys(void)
             if (dx > 40) keys |= KEY_RIGHT;
         }
     }
-    /* Front touch held: fast forward. */
-    if (gPortConfig.turbo) {
+    /* Front touch held: fast forward. A short tap that starts on the left
+     * margin (the floor bar; the left edge when there are no panels) opens
+     * the job overview instead: there fast forward starts only once the
+     * touch is held longer than a tap. */
+    {
         SceTouchData t;
-        if (sceTouchPeek(SCE_TOUCH_PORT_FRONT, &t, 1) >= 1 && t.reportNum > 0)
-            keys |= PORT_KEY_TURBO;
+        int touched = sceTouchPeek(SCE_TOUCH_PORT_FRONT, &t, 1) >= 1 && t.reportNum > 0;
+        if (touched && sTouchIgnore) {
+            /* still the touch that closed the overview */
+        } else if (touched) {
+            int x = t.report[0].x / 2, y = t.report[0].y / 2; /* panel: 1920x1088 */
+            if (sTouchFrames == 0) {
+                float zone = sGameX >= PANEL_MIN_W ? sGameX : TAP_ZONE_W;
+                sTouchLeft = x < zone;
+                sTouchX = x;
+                sTouchY = y;
+            } else if (abs(x - sTouchX) > 30 || abs(y - sTouchY) > 30) {
+                sTouchLeft = 0; /* a swipe, not a tap */
+            }
+            if (sTouchFrames < 1000)
+                sTouchFrames++;
+            if (gPortConfig.turbo && (!sTouchLeft || sTouchFrames > TAP_FRAMES))
+                keys |= PORT_KEY_TURBO;
+        } else {
+            int tap = sTouchFrames > 0 && sTouchFrames <= TAP_FRAMES && sTouchLeft;
+            sTouchFrames = 0;
+            sTouchIgnore = 0;
+            if (tap) {
+                RunJobOverview();
+                sWaitRelease = 1;
+                sTouchIgnore = 1;
+                return 0;
+            }
+        }
     }
     return keys;
 }

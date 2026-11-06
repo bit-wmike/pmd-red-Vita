@@ -22,6 +22,8 @@
  *   PMD_WAV=1            write outdir/audio.wav
  *   PMD_TIMING=1         print the render time every 300 frames
  *   PMD_TRACE=file       per-frame checksums of the game state
+ *   PMD_PANEL_LOG=n      the frame panels (clock, dungeon, floor bar, jobs) as text every n frames
+ *   PMD_PANEL_TESTJOBS=n six sample jobs written into the job list at frame n (panel tests only)
  *   settings.ini, quicksave.bin, romindex.bin and textindex.bin live in the output directory.
  */
 #include <stdarg.h>
@@ -35,6 +37,7 @@
 #include "port/port_config.h"
 #include "port/port_game.h"
 #include "port/port_text.h"
+#include "port/port_panel.h"
 
 static const char *sOutDir = "host_out";
 static int sMaxFrames = 600;
@@ -44,6 +47,7 @@ static FILE *sWav;
 static long sWavFrames;
 static char sSavePath[1024];
 static int sQSaveAt = -1, sQLoadAt = -1;
+static int sPanelLog; /* PMD_PANEL_LOG=n: the frame panels as text every n frames */
 
 struct InputEvent { int frame; unsigned keys; };
 static struct InputEvent sInput[8192];
@@ -125,6 +129,12 @@ uint16_t Platform_PollKeys(void)
         Port_RequestQuickSave();
     if (frame == sQLoadAt)
         Port_RequestQuickLoad();
+    if (sPanelLog > 0 && frame % sPanelLog == 0) {
+        static char text[4096];
+        Port_PanelRefresh();
+        Port_PanelText(text, sizeof(text));
+        Platform_Log("[panel] frame %d\n%s", frame, text);
+    }
     for (i = 0; i < sInputCount; i++)
         if (frame >= sInput[i].frame)
             keys = (uint16_t)sInput[i].keys;
@@ -326,6 +336,10 @@ int main(int argc, char **argv)
             if (buf[i] == ',')
                 buf[i] = '\n';
         Port_ConfigParse(buf);
+    }
+    if ((e = getenv("PMD_PANEL_LOG")) != NULL && atoi(e) > 0) {
+        sPanelLog = atoi(e);
+        Port_PanelEnable(1);
     }
     Port_RunGame();
     return 0;

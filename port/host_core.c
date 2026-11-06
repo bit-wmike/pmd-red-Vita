@@ -17,6 +17,7 @@
 #include "port/port.h"
 #include "port/port_view.h"
 #include "port/port_overlay.h"
+#include "port/port_panel.h"
 #include "port/port_config.h"
 #include "port/port_game.h"
 #include "port/ppu/include/virtuappu.h"
@@ -283,6 +284,7 @@ void HostRunFrame(void)
     HPROF_MARK(HPROF_VBLANK);
     Port_ViewOnVBlank();
     Port_OverlayOnVBlank();
+    Port_PanelOnVBlank();
     virtuappu_mode1_commit_obj_metadata();
     IO16(0x004) &= ~DISPSTAT_VBLANK;
 

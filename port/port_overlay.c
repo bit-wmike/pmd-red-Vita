@@ -11,12 +11,12 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <time.h>
 
 #include "port/port.h"
 #include "port/port_view.h"
 #include "port/port_config.h"
 #include "port/port_overlay.h"
+#include "port/port_panel.h"
 
 #include "global.h"
 #include "run_dungeon.h"
@@ -190,37 +190,8 @@ static void DrawText(uint32_t *frame, int width, int height, int pitch, int x, i
 
 static void TimeOfDay(char *out, size_t size)
 {
-    static uint32_t lastFrame = 0xFFFFFFFFu;
-    static int hour, minute;
-    uint32_t frame = Port_FrameCounter();
-
-    if (lastFrame == 0xFFFFFFFFu || frame - lastFrame >= 60) {
-        time_t now;
-        struct tm *t;
-#ifndef __vita__
-        /* host tests: a fixed time keeps the frames reproducible */
-        static const char *fixed;
-        static int fixedChecked;
-        if (!fixedChecked) {
-            fixed = getenv("PMD_CLOCK");
-            fixedChecked = 1;
-        }
-        if (fixed != NULL && sscanf(fixed, "%d:%d", &hour, &minute) == 2) {
-            lastFrame = frame;
-            goto done;
-        }
-#endif
-        now = time(NULL);
-        t = localtime(&now);
-        if (t != NULL) {
-            hour = t->tm_hour;
-            minute = t->tm_min;
-        }
-        lastFrame = frame;
-    }
-#ifndef __vita__
-done:
-#endif
+    int hour, minute;
+    Port_PanelTimeOfDay(&hour, &minute);
     snprintf(out, size, "%02d:%02d", hour, minute);
 }
 
@@ -254,6 +225,7 @@ void Port_OverlayDraw(uint32_t *frame, int width, int height, int pitch)
 {
     if (sBarCount > 0 && gPortConfig.hpBars != 0)
         DrawBars(frame, width, height, pitch);
-    if (gPortConfig.clockOverlay)
+    /* the Vita shows the clock beside the image when its panels are visible */
+    if (gPortConfig.clockOverlay && !gPortPanelsVisible)
         DrawClock(frame, width, height, pitch);
 }
