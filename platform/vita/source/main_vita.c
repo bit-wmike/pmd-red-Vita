@@ -87,6 +87,7 @@ void Platform_Log(const char *fmt, ...)
 /* Watchdog (see WatchdogThread): a game frame beat, the port menus pause it,
  * and the last platform call entered by the game thread. */
 static volatile unsigned sWdBeat;
+static SceUID sMainThread = -1;
 static volatile int sWdPause;
 static const char *volatile sWdWhere = "start";
 
@@ -251,10 +252,17 @@ static void PerfFrame(SceUInt64 start)
 static unsigned sAnchorVcount, sAnchorFrame;
 static int sAnchored, sSkipRun;
 
+/* sceDisplayGetVcount counts in 16 bits: it wraps every 65536 vblanks
+ * (~18.2 min; Vita3K masks it with 0xFFFF as well). Up to 0.1.22 the
+ * difference was taken in 32 bits: after the wrap every frame was ~65536
+ * vblanks early and WaitDue() waited forever - the freeze of run8 (frame
+ * 71859) and the watchdog crashes of run9/run10 (frames 74685, 78115),
+ * all after ~20 min. The difference is taken modulo 65536 now (the
+ * schedule is re-anchored long before it could drift 32768 vblanks). */
 static int FrameLate(void)
 {
     unsigned due = sAnchorVcount + (Port_FrameCounter() - sAnchorFrame);
-    return (int)(sceDisplayGetVcount() - due);
+    return (int)(int16_t)(uint16_t)((unsigned)sceDisplayGetVcount() - due);
 }
 
 static void Reanchor(void)
@@ -290,10 +298,20 @@ int Platform_PaceAllowsRender(void)
 
 static void WaitDue(void)
 {
+    int n;
     if (Port_TurboActive())
         return;
-    while (FrameLate() < 0)
+    /* at most a few vblanks: a frame is never due further ahead, so a
+     * longer wait means the schedule is broken - start a new one */
+    for (n = 0; FrameLate() < 0; n++) {
+        if (n >= 8) {
+            Platform_Log("[pace] frame %u still early after %d vblanks (vcount %d, anchor %u/%u): re-anchored\n",
+                         (unsigned)Port_FrameCounter(), n, sceDisplayGetVcount(), sAnchorVcount, sAnchorFrame);
+            Reanchor();
+            break;
+        }
         sceDisplayWaitVblankStart();
+    }
 }
 
 
@@ -1436,8 +1454,16 @@ static int WatchdogThread(SceSize args, void *argp)
             continue;
         {
             static char buf[2600];
+            SceKernelThreadInfo ti;
             int n = snprintf(buf, sizeof(buf), "pmd %s watchdog: no game frame for 30 s, frame %u, in %s\n",
                              PMD_PORT_VERSION, (unsigned)Port_FrameCounter(), sWdWhere);
+            n += snprintf(buf + n, sizeof(buf) - n, "pacing: vcount %d, anchor vcount %u frame %u, late %d, turbo %d\n",
+                          sceDisplayGetVcount(), sAnchorVcount, sAnchorFrame, FrameLate(), Port_TurboActive());
+            memset(&ti, 0, sizeof(ti));
+            ti.size = sizeof(ti);
+            if (sMainThread >= 0 && sceKernelGetThreadInfo(sMainThread, &ti) >= 0)
+                n += snprintf(buf + n, sizeof(buf) - n, "game thread: status 0x%x, wait type 0x%x, wait id 0x%x, priority %d\n",
+                              (unsigned)ti.status, (unsigned)ti.waitType, (unsigned)ti.waitId, (int)ti.currentPriority);
             n += Port_CrumbText(buf + n, (int)sizeof(buf) - n);
             Platform_WriteFile("watchdog.txt", buf, (size_t)n);
             sceKernelDelayThread(200 * 1000);
@@ -1455,10 +1481,11 @@ static void WriteCrumbs(void)
     int n;
     sWdBeat++;
     if (!sWdStarted) {
-        SceUID wd = sceKernelCreateThread("pmd_watchdog", WatchdogThread, 0x10000100 - 10, 0x2000, 0, 0, NULL);
+        /* 16 KiB: snprintf + sceIo (8 KiB up to 0.1.22; run9/run10 left no watchdog.txt) */
+        SceUID wd = sceKernelCreateThread("pmd_watchdog", WatchdogThread, 0x10000100 - 10, 0x4000, 0, 0, NULL);
+        int ok = wd >= 0 ? sceKernelStartThread(wd, 0, NULL) : wd;
         sWdStarted = 1;
-        if (wd >= 0)
-            sceKernelStartThread(wd, 0, NULL);
+        Platform_Log("[thread] watchdog: 0x%08x / start 0x%08x\n", (unsigned)wd, (unsigned)ok);
     }
     if (++sCount % 10)
         return;
@@ -1470,6 +1497,7 @@ static void WriteCrumbs(void)
             th = sceKernelCreateThread("pmd_crumbs", CrumbThread, 0x10000100 + 20, 0x4000, 0, 0, NULL);
             if (th >= 0 && sceKernelStartThread(th, 0, NULL) >= 0)
                 sThreadState = 1;
+            Platform_Log("[thread] crumbs writer: 0x%08x (%s)\n", (unsigned)th, sThreadState > 0 ? "running" : "failed");
         }
     }
     if (sThreadState > 0 && sCrumbLen != 0)
@@ -1735,6 +1763,7 @@ int main(int argc, char **argv)
     uint64_t tMain = sceKernelGetProcessTimeWide(), tPhase;
 
     (void)argc; (void)argv;
+    sMainThread = sceKernelGetThreadId();
     memset(&init, 0, sizeof(init));
     memset(&boot, 0, sizeof(boot));
     sceAppUtilInit(&init, &boot);

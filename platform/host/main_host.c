@@ -161,9 +161,11 @@ static int ShotWanted(int frame)
     return strstr(sShotList, buf) != NULL;
 }
 
+uint32_t Port_FrameBase(void); /* port/host_core.c: PMD_FRAME_START */
+
 void Platform_Present(const uint32_t *pixels, int width, int height, int pitch, int zoomHeight)
 {
-    int frame = (int)Port_FrameCounter();
+    int frame = (int)(Port_FrameCounter() - Port_FrameBase());
     (void)zoomHeight;
     if (getenv("PMD_TIMING") && frame % 300 == 299)
         printf("host: frame %d render avg %u us\n", frame, Port_ProfileAverageUs(PORT_PROF_RENDER));
@@ -200,7 +202,7 @@ static void Finish(void)
 
 uint16_t Platform_PollKeys(void)
 {
-    int frame = (int)Port_FrameCounter() + 1;
+    int frame = (int)(Port_FrameCounter() - Port_FrameBase()) + 1;
     uint16_t keys = 0;
     int i;
     if (frame >= sMaxFrames) {

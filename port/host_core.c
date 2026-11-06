@@ -31,6 +31,7 @@ extern void (*gIntrTable[6])(void);
 
 static int sRendering;
 static uint32_t sFrameCounter;
+static uint32_t sFrameBase; /* host: PMD_FRAME_START */
 static uint32_t sFrameBuffer[PORT_VIEW_MAX_W * PORT_VIEW_MAX_H];
 static int sMainLoopHalt;
 static int sResetRequested;
@@ -266,8 +267,15 @@ void HostRunFrame(void)
     u16 keys;
 
 #ifndef __vita__
-    if (sHProf < 0)
+    if (sHProf < 0) {
         sHProf = getenv("PMD_PROF") ? atoi(getenv("PMD_PROF")) : 0;
+        /* PMD_FRAME_START=n: the port's frame counter starts at n (rounded
+         * down to a multiple of 240, so that frame parity, the panel's 15-frame
+         * beat and the like stay in step) - for long-run counter checks; the
+         * test scripts keep counting from 0 (Port_FrameBase) */
+        if (getenv("PMD_FRAME_START"))
+            sFrameCounter = sFrameBase = (uint32_t)strtoul(getenv("PMD_FRAME_START"), NULL, 0) / 240u * 240u;
+    }
 #endif
     HPROF_MARK(HPROF_LOGIC);
     Port_ViewBeforeLogicEnd();
@@ -334,6 +342,11 @@ unsigned Port_ProfileAverageUs(int what)
 uint32_t Port_FrameCounter(void)
 {
     return sFrameCounter;
+}
+
+uint32_t Port_FrameBase(void)
+{
+    return sFrameBase;
 }
 
 /* Settings (settings.ini in the data folder). */
