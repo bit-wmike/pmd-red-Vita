@@ -769,7 +769,11 @@ static void sub_803EDF0(void)
     y2 = (gDungeon->unk181e8.cameraPixelPos.y + 24);
     y = y1 - y2;
 
+#ifdef PORT
+    if (x >= -32 - gPortViewMarginLeft && y >= -8 - gPortViewMarginTop && x < 240 + gPortViewMarginRight && y < 160 + gPortViewMarginBottom) {
+#else
     if (x >= -32 && y >= -8 && x < 240 && y < 160) {
+#endif
         SpriteSetY(&gUnknown_202EDDC, y);
         SpriteSetAffine1(&gUnknown_202EDDC, 0);
         SpriteSetAffine2(&gUnknown_202EDDC, 0);

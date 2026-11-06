@@ -7,6 +7,9 @@
 #include "memory.h"
 #include "sprite.h"
 #include "constants/status.h"
+#ifdef PORT
+#include "port/port_view.h"
+#endif
 
 // size: 0x8
 typedef struct DungeonPokemonStatusSprite
@@ -283,7 +286,11 @@ static void DrawStatusSprite(s16 species, s32 status, DungeonPos *pos, DungeonPo
     posX = (pos->x - gfxInfo->width  * 4 - posScreen->x) + posOffset->x;
     posY = (pos->y - gfxInfo->height * 4 - posScreen->y) + posOffset->y;
     ySubbed = posY - 16;
+#ifdef PORT
+    if (posX >= -32 - gPortViewMarginLeft && posY >= -32 - gPortViewMarginTop && posX < 240 + gPortViewMarginRight && posY < 160 + gPortViewMarginBottom) {
+#else
     if (posX >= -32 && posY >= -32 && posX < 240 && posY < 160) {
+#endif
         switch (spriteInfo.gfxIndex) {
             case STATUS_GFX_SLEEPLESS:
             case STATUS_GFX_BLINKER:

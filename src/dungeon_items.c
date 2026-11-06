@@ -378,6 +378,9 @@ bool8 sub_80462AC(Entity * entity, u8 hallucinating, u8 a2, u8 a3, u8 a4)
 {
     s32 x, y, y2;
     s32 objMode = 0;
+#ifdef PORT
+    bool8 gbaVisible = TRUE;
+#endif
 
     if (!EntityIsValid(entity))
         return FALSE;
@@ -391,8 +394,17 @@ bool8 sub_80462AC(Entity * entity, u8 hallucinating, u8 a2, u8 a3, u8 a4)
             objMode = 1;
         }
 
+#ifdef PORT
+        /* draw anywhere in the Full View; the result (used for frame
+         * pacing by some callers) stays the GBA one */
+        if (!Port_ShouldDrawEntity(entity))
+            return FALSE;
+        if (!ShouldDisplayEntity(entity))
+            gbaVisible = FALSE;
+#else
         if (!ShouldDisplayEntity(entity))
             return FALSE;
+#endif
     }
 
     x = (entity->pixelPos.x / 256) - gDungeon->unk181e8.cameraPixelPos.x;
@@ -430,7 +442,11 @@ bool8 sub_80462AC(Entity * entity, u8 hallucinating, u8 a2, u8 a3, u8 a4)
             y2 = 1;
         }
         AddSprite(&gUnknown_202EDC0, y2, NULL, NULL);
+#ifdef PORT
+        return gbaVisible && x >= -32 && y >= -32 && x <= 272 && y <= 192;
+#else
         return TRUE;
+#endif
     }
 
     return FALSE;

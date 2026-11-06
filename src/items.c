@@ -1,6 +1,7 @@
 #include "global.h"
 #ifdef PORT
 #include "port/port_cheats.h"
+#include "port/port_text.h"
 #endif
 #include "globaldata.h"
 #include "status_strings.h"
@@ -763,7 +764,13 @@ u32 sub_80913E0(Item* slot, u32 windowId, STATUSTEXTS(statuses))
 
     sub_80073B8(windowId);
     PrintFormattedStringOnWindow(16, 0, buffer88, windowId, 0);
+#ifdef PORT
+    /* the European description of the language by item ID (the status list
+     * below keeps reading the English text: its names are English) */
+    PrintFormattedStringOnWindow(8, 24, Port_TextById(PORT_TEXT_ITEM_DESC, slot->id, GetItemDescription(slot->id)), windowId, 0);
+#else
     PrintFormattedStringOnWindow(8, 24, GetItemDescription(slot->id), windowId, 0);
+#endif
 
     if (GetItemCategory(slot->id) == CATEGORY_TMS_HMS) {
         Move *buffer8 = (Move*) (buffer88 + 80); // field in struct

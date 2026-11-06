@@ -1,4 +1,8 @@
 #include "global.h"
+#ifdef PORT
+#include <stdio.h>
+#include "port/port_text.h"
+#endif
 #include "globaldata.h"
 #include "constants/dungeon.h"
 #include "constants/monster.h"
@@ -2482,6 +2486,18 @@ void PrintYellowDungeonNametoBuffer(u8 *buffer, DungeonLocation *dungeonLocation
 
 void PrintDungeonLocationtoBuffer(u8 *buffer, DungeonLocation *dungeonLocation)
 {
+#ifdef PORT
+    {
+        /* European languages: "Kleinhain U2" instead of "B2F" (the format
+         * is not taken through the text lookup: it is in the ROM as the
+         * German one and would be "translated" again) */
+        const char *pre, *sign;
+        if (Port_FloorStyle(gDungeons[dungeonLocation->id].stairDirectionUp, &pre, &sign)) {
+            sprintf((char *)buffer, "#cD%s#r\x81\x40%s#c5%s%d#r", (const char *)Port_Text(gDungeonNames[dungeonLocation->id].name1), pre, sign, dungeonLocation->floor);
+            return;
+        }
+    }
+#endif
     if (gDungeons[dungeonLocation->id].stairDirectionUp){
         sprintfStatic(buffer, _("{color YELLOW_D}%s{reset}　{color CYAN}%d{reset}F"), gDungeonNames[dungeonLocation->id].name1, dungeonLocation->floor); //_F
     }

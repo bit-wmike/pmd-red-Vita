@@ -99,7 +99,7 @@ Schalter: `PMD_SHOT=f1,f2` / `PMD_SHOT_EVERY=n` (PPM), `PMD_VIEW=0/1/2`, `PMD_WA
   PPMs** (`cmp`); (2) Renderer-Änderungen Bild für Bild gegen die alte Version vergleichen;
   (3) Vita-Build ohne Fehler.
 
-## Stand (0.1.23, 06.11.2026)
+## Stand (0.1.24, 06.11.2026)
 - 0.1.12 (Mikes `run4`, 0.1.11: Absturz vor dem ersten Dungeon, Titel/Gesundheitshinweis englisch bzw.
   „fehlerhaft“, Tastatur-Müll bei der Namensgebung, Traumtext nicht zentriert): (1) **Absturz**: `lvmp001`
   (Levelkurve, AT-gepackt, 616-Byte-Block mit SIRO-Kopf) wird aus der EU-ROM genommen; `Port_ChooseFile`
@@ -123,6 +123,15 @@ Schalter: `PMD_SHOT=f1,f2` / `PMD_SHOT_EVERY=n` (PPM), `PMD_VIEW=0/1/2`, `PMD_WA
   UI-Ebene (BG0 mit eigenem dx) – Rücksprache mit Mike. `UniformMap` (einfarbige Karten → Bild mittig) ist
   drin, greift hier aber nicht (Karte hat echte Kacheln).
   (6) `vita.sh fetch` holt jetzt auch `pmd_red.sav`.
+- 0.1.24 (Mikes `run11`, 38 min ohne Absturz, Start 4,4 s): **Texte** (Agent T): Item-/Attackenbeschreibungen über
+  `Port_TextById` (EU-Tabellen nach ID: Items 5×240 ab 0x2427c0, Attacken 5×413), Pools mit Steuerbyte nach `#x`
+  (Pelipper-Post), `POOL_MAX` 256, `RegionLookup` mit `REGION_LEAD` („Stairs“ → „Treppe“), Etagen EU-Format über
+  `Port_FloorStyle` (Jobliste, Briefe); `TEXT_INDEX_FORMAT` 4; Statuszeile „B1F“ ist Kachelgrafik (offen).
+  **Sichtbarkeit** (Agent V): `ShouldDisplayEntity` wieder exakt GBA (war Spiellogik: Meldungen, Kamera, Fallen!);
+  Zeichnen über `Port_ShouldDrawEntity`/`Port_ShouldDrawMonster` (Pixel- + Kachelrahmen ±6/±5 in `sub_803F428`
+  erweitert). **Andocken oben** (Agent D, `PMD_DOCK` Bits 1 unten/2 HUD/4 oben, Vita 7), Statuszeile über Kacheln
+  0x280–0x2D7, Minikarte Palette 14; Partner-KP rechts neben der Statuszeile (`port_overlay.c`, `Port_ViewHudStatus`).
+  Viereck/Dreieck frei belegbar (0–5), nächster offener Job oben im Rahmen.
 - 0.1.23 (Mikes `run9`/`run10`): **Einfrieren/Absturz nach ~18 min** = `sceDisplayGetVcount()` zählt 16 Bit (Überlauf alle
   65536 VBlanks), `FrameLate` rechnete 32 Bit → `WaitDue` wartete ewig (run8 Freeze, run9/10 Watchdog-Absturz). Jetzt
   Differenz modulo 65536, `WaitDue` max. 8 VBlanks dann Reanchor (`[pace]`-Log). Host `PMD_FRAME_START=n`. Dumps blieben
@@ -267,7 +276,7 @@ Schalter: `PMD_SHOT=f1,f2` / `PMD_SHOT_EVERY=n` (PPM), `PMD_VIEW=0/1/2`, `PMD_WA
   (`sUiDx/sUiDy`, `sSlotUi[]`); die Welt (BG2/3, `AddAxSprite`-Sprites, WIN/HDMA) folgt der Kamera wie
   bisher. Traumtexte, Dialogboxen und Portraits sind damit mittig, auch wenn die Kamera am Kartenrand steht.
   (3) Dungeon-Sichtweite: `ShouldDisplayEntity` und `trap.c` nutzen `gPortViewMargin*` (Monster/Items/Fallen
-  im ganzen Weitsicht-Bereich; wirkt auch auf Animationslogik sichtbarer Entities).
+  im ganzen Weitsicht-Bereich; seit 0.1.24 nur noch zum Zeichnen, Logik = GBA).
   (4) Intro-Weltkarte = Bodenkarte **S03** (288×312, Kamera schwenkt vertikal): mit der Bildregel 288 px
   breit. Menühintergrund (schwarz mit Funkeln) ist GBA-echt. `PMD_VIEW_LOG=1` (Host) loggt Ansichtswechsel.
   Offen: Dungeon-Titel „Tiny Woods B1F“ englisch (Banner).

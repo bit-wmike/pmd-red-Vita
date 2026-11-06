@@ -189,7 +189,7 @@ static void PreferEnglishStrings(void);
  * sizes or the string rules above); TEXT_INDEX_MAGIC names the layout. */
 #define TEXT_INDEX_FILE "textindex.bin"
 #define TEXT_INDEX_MAGIC 0x43444954u /* "TIDC": packed tables (the full tables were "TIDX") */
-#define TEXT_INDEX_FORMAT 3
+#define TEXT_INDEX_FORMAT 4
 #define TEXT_INDEX_HEADER 64
 
 struct TextIndexHeader {
@@ -202,7 +202,7 @@ struct TextIndexHeader {
     uint32_t reserved[2];
 };
 
-#define POOL_MAX 128
+#define POOL_MAX 256
 #define REGION_MAX 32
 #define POOL_WORDS 5
 #define REGION_WORDS 4
@@ -791,7 +791,9 @@ static uint32_t PoolEntryNext(uint32_t p, int kind)
      * must come out the same in every language) */
     for (e = q; e < (long)gHostRomSize && gHostRom[e]; e++) {
         unsigned c = gHostRom[e];
-        if (c < 0x20 && c != '\t' && c != '\n' && c != '\r')
+        /* in a text pool a control byte may be the argument of a text
+         * code ("#y\x08": position); anything else ends the pool */
+        if (c < 0x20 && c != '\t' && c != '\n' && c != '\r' && !(kind == 0 && e - q >= 2 && gHostRom[e - 2] == '#' && gHostRom[e - 1] >= '=' && gHostRom[e - 1] <= 'z'))
             return 0;
         if (e - q >= MAX_STR)
             return 0;
@@ -958,6 +960,7 @@ static long PoolLookup(uint32_t r, int lang)
  * merged across small gaps; the k-th string pointer of the English region
  * matches the k-th of the other language. */
 #define REGION_GAP 0x1000
+#define REGION_LEAD 0x100 /* strings of a region before its first pool */
 
 struct Region {
     uint32_t start, end, count;
@@ -1084,7 +1087,9 @@ static long RegionLookup(uint32_t r, int lang)
     int i, j;
     for (i = 0; i < sRegionCount; i++) {
         uint32_t p, t, k = 0, found = 0;
-        if (sRegions[i].lang != PORT_LANG_EN || r < sRegions[i].start || r >= sRegions[i].end)
+        /* the strings of the first small tables lie just before the
+         * region (its pools start after them): found by a pointer inside */
+        if (sRegions[i].lang != PORT_LANG_EN || r + REGION_LEAD < sRegions[i].start || r >= sRegions[i].end)
             continue;
         for (p = (sRegions[i].start + 3) & ~3u; p + 4 <= sRegions[i].end; p += 4) {
             if (!SitePtr(p, &t))
@@ -1095,8 +1100,34 @@ static long RegionLookup(uint32_t r, int lang)
             }
             k++;
         }
-        if (!found)
+        if (!found) {
+            /* only referenced from before the region: the k-th pointer
+             * counted back from the region start */
+            for (p = (sRegions[i].start & ~3u) - 4, k = 0; p + REGION_LEAD >= sRegions[i].start && p > 0; p -= 4) {
+                if (!SitePtr(p, &t))
+                    continue;
+                if (t == r) {
+                    found = 1;
+                    break;
+                }
+                k++;
+            }
+            if (!found)
+                return -1;
+            for (j = 0; j < sRegionCount; j++) {
+                if (j == i || sRegions[j].lang != lang || sRegions[j].count != sRegions[i].count)
+                    continue;
+                for (p = (sRegions[j].start & ~3u) - 4; p + REGION_LEAD >= sRegions[j].start && p > 0; p -= 4) {
+                    if (!SitePtr(p, &t))
+                        continue;
+                    if (k == 0)
+                        return (long)t;
+                    k--;
+                }
+                return -1;
+            }
             return -1;
+        }
         for (j = 0; j < sRegionCount; j++) {
             if (j == i || sRegions[j].lang != lang || sRegions[j].count != sRegions[i].count)
                 continue;
@@ -1196,6 +1227,19 @@ static long Translate(uint32_t r, int lang)
     return res;
 }
 
+static void TextInit(int lang)
+{
+    if (sInitDone)
+        return;
+    sInitDone = 1;
+    sDebug = getenv("PMD_TEXT_DEBUG") != NULL || gPortConfig.textDebug;
+    sDebugAll = getenv("PMD_TEXT_DEBUG") != NULL && atoi(getenv("PMD_TEXT_DEBUG")) >= 2;
+    sEnabled = Port_TextMultilingual();
+    if (sEnabled)
+        BuildIndex();
+    sCacheLang = lang;
+}
+
 const unsigned char *Port_Text(const unsigned char *s)
 {
     int lang = gPortConfig.language;
@@ -1203,15 +1247,7 @@ const unsigned char *Port_Text(const unsigned char *s)
     long r, res;
     if (s == NULL || lang <= PORT_LANG_EN || lang >= PORT_LANG_COUNT)
         return s;
-    if (!sInitDone) {
-        sInitDone = 1;
-        sDebug = getenv("PMD_TEXT_DEBUG") != NULL || gPortConfig.textDebug;
-        sDebugAll = getenv("PMD_TEXT_DEBUG") != NULL && atoi(getenv("PMD_TEXT_DEBUG")) >= 2;
-        sEnabled = Port_TextMultilingual();
-        if (sEnabled)
-            BuildIndex();
-        sCacheLang = lang;
-    }
+    TextInit(lang);
     if (!sEnabled)
         return s;
     {
@@ -1257,6 +1293,156 @@ const unsigned char *Port_Text(const unsigned char *s)
     if (sDebugAll)
         Platform_Log("text: %06lx [%.60s] -> %06lx [%.60s]\n", r, s, res, gHostRom + res);
     return gHostRom + res;
+}
+
+static void TextInit(int lang);
+
+/* ---- descriptions by index ----
+ *
+ * The European item and move data carry no description pointers (the US
+ * code reads the port's English copies): the European game takes them from
+ * tables by ID, five per kind, EN, DE, FR, IT, ES. Item descriptions are one
+ * run of 5 x NUMBER_OF_ITEM_IDS pointers, move descriptions five runs of
+ * NUM_MOVE_IDS pointers (each followed by its strings; the move names and
+ * the "used" messages are such runs as well, with short strings). Looked
+ * up by ID: shared texts ("Inflicts damage on the target.") get the right
+ * translation, and texts the US version words differently are found. */
+#define ID_RUNS_MAX 64
+#define ID_SCAN_LIMIT 0x800000 /* the text data lies in the first 8 MiB (graphics follow) */
+
+struct IdRun {
+    uint32_t start, count, avgLen;
+};
+
+static int sIdInit;
+static uint32_t sIdTable[PORT_TEXT_ID_KINDS][PORT_LANG_COUNT]; /* ROM offset of entry 0, 0 = none */
+static uint32_t sIdCount[PORT_TEXT_ID_KINDS];
+
+/* Runs of 4-aligned string pointers of exactly n or 5 x n entries. */
+static int FindIdRuns(struct IdRun *runs, uint32_t n1, uint32_t n2)
+{
+    uint32_t i, start = 0, len = 0, t, total, lim = gHostRomSize < ID_SCAN_LIMIT ? (uint32_t)gHostRomSize : ID_SCAN_LIMIT;
+    int count = 0;
+    for (i = 0; i + 4 <= lim; i += 4) {
+        if (StringPtr(i, &t)) {
+            if (len++ == 0)
+                start = i;
+            continue;
+        }
+        if ((len == n1 || len == 5 * n1 || len == n2 || len == 5 * n2) && count < ID_RUNS_MAX) {
+            uint32_t j, text = 0;
+            total = 0;
+            for (j = 0; j < len; j++) {
+                t = Target(start + 4 * j);
+                total += (uint32_t)(StrEnd(t) - t);
+                text += gHostRom[t] == 0 || Texty(t);
+            }
+            if (text * 10 >= len * 9) {
+                runs[count].start = start;
+                runs[count].count = len;
+                runs[count].avgLen = total / len;
+                count++;
+            }
+        }
+        len = 0;
+    }
+    return count;
+}
+
+/* The language order of five tables: by their words, else EN, DE, FR, IT, ES. */
+static void OrderTables(uint32_t *start, uint32_t n)
+{
+    uint32_t sorted[PORT_LANG_COUNT];
+    int k, lang, seen = 0;
+    uint32_t saveStride = sStride;
+    sStride = 4;
+    for (k = 0; k < PORT_LANG_COUNT; k++) {
+        lang = TableLanguage(start[k], n, 1);
+        if (lang < 0 || (seen & (1 << lang)))
+            break;
+        seen |= 1 << lang;
+        sorted[lang] = start[k];
+    }
+    sStride = saveStride;
+    if (k == PORT_LANG_COUNT)
+        memcpy(start, sorted, sizeof(sorted));
+    else
+        Platform_Log("text: description tables %06x...: languages unclear, taken as EN, DE, FR, IT, ES\n", start[0]);
+}
+
+static void FindIdTables(void)
+{
+    static const uint32_t counts[PORT_TEXT_ID_KINDS] = {PORT_TEXT_ITEM_COUNT, PORT_TEXT_MOVE_COUNT};
+    struct IdRun runs[ID_RUNS_MAX];
+    int n, i, k;
+    sIdInit = 1;
+    n = FindIdRuns(runs, counts[PORT_TEXT_ITEM_DESC], counts[PORT_TEXT_MOVE_DESC]);
+    /* items: one run of five tables */
+    for (i = 0; i < n; i++)
+        if (runs[i].count == 5 * counts[PORT_TEXT_ITEM_DESC] && runs[i].avgLen >= 40) {
+            for (k = 0; k < PORT_LANG_COUNT; k++)
+                sIdTable[PORT_TEXT_ITEM_DESC][k] = runs[i].start + 4 * counts[PORT_TEXT_ITEM_DESC] * k;
+            break;
+        }
+    /* moves: five runs in a row (each within RUN_GAP of the last) with long strings */
+    for (i = 0; i + PORT_LANG_COUNT <= n; i++) {
+        for (k = 0; k < PORT_LANG_COUNT; k++) {
+            const struct IdRun *r = &runs[i + k];
+            if (r->count != counts[PORT_TEXT_MOVE_DESC] || r->avgLen < 40)
+                break;
+            if (k > 0 && r->start - runs[i + k - 1].start > RUN_GAP)
+                break;
+        }
+        if (k == PORT_LANG_COUNT) {
+            for (k = 0; k < PORT_LANG_COUNT; k++)
+                sIdTable[PORT_TEXT_MOVE_DESC][k] = runs[i + k].start;
+            break;
+        }
+    }
+    for (k = 0; k < PORT_TEXT_ID_KINDS; k++) {
+        sIdCount[k] = counts[k];
+        if (sIdTable[k][0])
+            OrderTables(sIdTable[k], counts[k]);
+        Platform_Log("text: description table %d (%u entries): %06x %06x %06x %06x %06x\n", k, counts[k], sIdTable[k][0], sIdTable[k][1], sIdTable[k][2], sIdTable[k][3], sIdTable[k][4]);
+    }
+}
+
+const unsigned char *Port_TextById(int kind, int id, const unsigned char *s)
+{
+    int lang = gPortConfig.language;
+    uint32_t t;
+    if (kind < 0 || kind >= PORT_TEXT_ID_KINDS || id < 0 || lang <= PORT_LANG_EN || lang >= PORT_LANG_COUNT)
+        return s;
+    TextInit(lang);
+    if (!sEnabled)
+        return s;
+    if (!sIdInit)
+        FindIdTables();
+    if (sIdTable[kind][lang] == 0 || (uint32_t)id >= sIdCount[kind])
+        return s;
+    t = Target(sIdTable[kind][lang] + 4 * (uint32_t)id);
+    if (t >= gHostRomSize || gHostRom[t] == 0)
+        return s;
+    /* marked as a translation: Port_Text leaves it alone when drawn */
+    Put(sResults, RESULT_BITS, t, 1, 1);
+    if (sDebugAll)
+        Platform_Log("text: description %d/%d -> %06x [%.60s]\n", kind, id, t, gHostRom + t);
+    return gHostRom + t;
+}
+
+/* Floors as the European ROM writes them ("#cD%s#r U#c52#r"): the US
+ * code builds "B2F" itself. */
+int Port_FloorStyle(int up, const char **prefix, const char **sign)
+{
+    static const char *const pre[PORT_LANG_COUNT][2] = {
+        {"B", ""}, {"U", "E"}, {"E. ", "E. "}, {"P. ", "P. "}, {"N ", "N "},
+    };
+    int lang = gPortConfig.language;
+    if (lang <= PORT_LANG_EN || lang >= PORT_LANG_COUNT || !Port_TextMultilingual())
+        return 0;
+    *prefix = pre[lang][up ? 1 : 0];
+    *sign = (up || lang == PORT_LANG_DE) ? "" : "-";
+    return 1;
 }
 
 /* A pointer into a string: the dialogue engine continues after a page

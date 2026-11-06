@@ -196,7 +196,12 @@ void UpdateMonsterSprite(Entity *entity)
     }
 
     if (entInfo->unk15C == 0) {
+#ifdef PORT
+        /* drawing only: anywhere in the Full View (dungeon_util.c) */
+        var_3C = Port_ShouldDrawMonster(entity);
+#else
         var_3C = sub_8042768(entity);
+#endif
     }
     else {
         if (entInfo->unk15D != 0) {

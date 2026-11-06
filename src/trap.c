@@ -85,8 +85,25 @@ void sub_807FA9C(void)
     s32 x, y;
     bool8 showInvisibles = gDungeon->unk181e8.showInvisibleTrapsMonsters;
 
+#ifdef PORT
+    /* drawing only: every tile of the Full View (the sprite test below
+     * clips to the view) */
+    s32 y0 = gDungeon->unk181e8.cameraPos.y - 5, y1 = gDungeon->unk181e8.cameraPos.y + 5;
+    s32 x0 = gDungeon->unk181e8.cameraPos.x - 6, x1 = gDungeon->unk181e8.cameraPos.x + 6;
+    s32 vx0 = (gDungeon->unk181e8.cameraPixelPos.x - 32 - gPortViewMarginLeft) / 24 - 1;
+    s32 vx1 = (gDungeon->unk181e8.cameraPixelPos.x + 272 + gPortViewMarginRight) / 24 + 1;
+    s32 vy0 = (gDungeon->unk181e8.cameraPixelPos.y - 32 - gPortViewMarginTop) / 24 - 1;
+    s32 vy1 = (gDungeon->unk181e8.cameraPixelPos.y + 192 + gPortViewMarginBottom) / 24 + 1;
+    if (vx0 < x0) x0 = vx0;
+    if (vx1 > x1) x1 = vx1;
+    if (vy0 < y0) y0 = vy0;
+    if (vy1 > y1) y1 = vy1;
+    for (y = y0; y < y1; y++) {
+        for (x = x0; x < x1; x++) {
+#else
     for (y = gDungeon->unk181e8.cameraPos.y - 5; y < gDungeon->unk181e8.cameraPos.y + 5; y++) {
         for (x = gDungeon->unk181e8.cameraPos.x - 6; x < gDungeon->unk181e8.cameraPos.x + 6; x++) {
+#endif
             bool8 r6 = FALSE;
             const Tile *tile = GetTile(x, y);
 

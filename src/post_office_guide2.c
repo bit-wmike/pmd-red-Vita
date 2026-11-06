@@ -1,4 +1,9 @@
 #include "global.h"
+#ifdef PORT
+#include <stdio.h>
+#include "port/port_text.h"
+#include "dungeon_info.h"
+#endif
 #include "globaldata.h"
 #include "constants/mailbox.h"
 #include "constants/wonder_mail.h"
@@ -108,7 +113,17 @@ static void DisplayMissionObjectives(void)
             mail = GetMailatIndex(local_94);
             sub_803B6B0(10, 16, 3, sUnknown_203B330->unk10);
             // %dF
+#ifdef PORT
+            {
+                const char *pre, *sign;
+                if (Port_FloorStyle(IsStairDirectionUp(mail->dungeonSeed.location.id), &pre, &sign))
+                    sprintf((char *)buffer, "%s%s%d", pre, sign, mail->dungeonSeed.location.floor);
+                else
+                    sprintfStatic(buffer,sFmt1,mail->dungeonSeed.location.floor);
+            }
+#else
             sprintfStatic(buffer,sFmt1,mail->dungeonSeed.location.floor);
+#endif
             PrintStringOnWindow(21,16,buffer,sUnknown_203B330->unk10,0);
             // Rescue #C6%s#R
             sprintfStatic(buffer,sFmtRescue,GetMonSpecies(mail->clientSpecies));

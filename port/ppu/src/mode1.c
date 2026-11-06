@@ -4354,8 +4354,14 @@ void virtuappu_mode1_render_frame(const PPUMemory* ppu) {
                 o[off + 2] = (uint8_t)vofs;
                 o[off + 3] = (uint8_t)(vofs >> 8);
             }
-            o[MODE1_IO_WIN0H] = u[MODE1_IO_WIN0H];
-            o[MODE1_IO_WIN0H + 1] = u[MODE1_IO_WIN0H + 1];
+            if (v >= MODE1_GBA_NATIVE_HEIGHT) {
+                /* rows beyond the GBA screen: no text box (left = right) */
+                o[MODE1_IO_WIN0H] = 1;
+                o[MODE1_IO_WIN0H + 1] = 1;
+            } else {
+                o[MODE1_IO_WIN0H] = u[MODE1_IO_WIN0H];
+                o[MODE1_IO_WIN0H + 1] = u[MODE1_IO_WIN0H + 1];
+            }
         }
     }
 

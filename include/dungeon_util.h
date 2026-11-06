@@ -34,6 +34,10 @@ Entity *SpawnItemEntity(DungeonPos *pos);
 void sub_80457DC(Entity* ent);
 bool8 ShouldMinimapDisplayEntity(Entity *ent);
 bool8 ShouldDisplayEntity(Entity *ent);
+#ifdef PORT
+bool8 Port_ShouldDrawEntity(Entity *ent); /* drawing only, Full View */
+bool8 Port_ShouldDrawMonster(Entity *pokemon);
+#endif
 bool8 CanSeeTarget(Entity *entity, Entity *targetEntity);
 bool8 CanTargetEntity(Entity *entity, Entity *targetEntity);
 bool8 sub_8045A70(Entity *entity, Entity *targetEntity);

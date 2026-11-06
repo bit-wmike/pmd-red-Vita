@@ -1,4 +1,7 @@
 #include "global.h"
+#ifdef PORT
+#include "port/port_text.h"
+#endif
 #include "globaldata.h"
 #include "constants/colors.h"
 #include "constants/monster.h"
@@ -1343,6 +1346,10 @@ s32 unk_PrintMoveDescription(s32 x, Move *move, s32 a3, STATUSTEXTS(statuses))
     PrintFormattedStringOnWindow(8 * x + 16, 0, _("{POKEMON_0}"), a3, 0);
     y = 19;
     moveDescription = sMovesData[move->id].description;
+#ifdef PORT
+    /* the European description of the language by move ID */
+    moveDescription = (u8 *)Port_TextById(PORT_TEXT_MOVE_DESC, move->id, moveDescription);
+#endif
 
     if (moveDescription[0] == '*') {
         y = 16;

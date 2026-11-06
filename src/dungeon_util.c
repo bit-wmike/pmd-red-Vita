@@ -438,17 +438,66 @@ bool8 ShouldMinimapDisplayEntity(Entity *ent)
     }
 }
 
+#ifdef PORT
+/* Port: the Full View (424x240) shows more of the floor than the GBA
+ * screen.  The game decides "on screen" in two places: a pixel box around
+ * the GBA screen (-32..272 x -32..192 from cameraPixelPos) and a tile box
+ * around the camera (sub_803F428: +-6 x +-5 tiles).  Both are widened here
+ * by gPortViewMargin* -- but only for DRAWING (Port_ShouldDrawEntity).
+ * ShouldDisplayEntity itself stays exactly as on the GBA, because the game
+ * also uses it for logic: messages, frame waits, camera jumps, even
+ * SetTrap() in trap.c.  The sight rules (darkness, rooms, invisibility)
+ * are the same in both. */
+static bool8 PortWideView(void)
+{
+    return (gPortViewMarginLeft | gPortViewMarginRight | gPortViewMarginTop | gPortViewMarginBottom) != 0;
+}
+
+static bool8 PortPixelInView(s32 x, s32 y, bool8 wide)
+{
+    if (!wide)
+        return x >= -32 && y >= -32 && x <= 272 && y <= 192;
+    return x >= -32 - gPortViewMarginLeft && y >= -32 - gPortViewMarginTop
+        && x <= 272 + gPortViewMarginRight && y <= 192 + gPortViewMarginBottom;
+}
+
+/* sub_803F428 with the Full View: the GBA tile box or any tile whose
+ * centre lies in the widened pixel box; same sight test afterwards */
+static bool8 PortPosInView(DungeonPos *pos, bool8 wide)
+{
+    UnkDungeonGlobal_unk181E8_sub *strPtr = &gDungeon->unk181e8;
+    bool8 inRange;
+
+    if (!wide)
+        return sub_803F428(pos);
+
+    inRange = abs(strPtr->cameraPos.x - pos->x) <= 6 && abs(strPtr->cameraPos.y - pos->y) <= 5;
+    if (!inRange)
+        inRange = PortPixelInView(pos->x * 24 + 12 - strPtr->cameraPixelPos.x,
+                                  pos->y * 24 + 16 - strPtr->cameraPixelPos.y, TRUE);
+    if (inRange) {
+        if (strPtr->allTilesRevealed == 0 && strPtr->unk1820C == 0 && strPtr->cameraTarget != NULL)
+            return IsPositionActuallyInSight(&strPtr->cameraPos, pos);
+        return TRUE;
+    }
+    return FALSE;
+}
+
+static bool8 ShouldDisplayEntityImpl(Entity *ent, bool8 wide)
+{
+    if (ent->isVisible) {
+        s32 x = (ent->pixelPos.x / 256) - gDungeon->unk181e8.cameraPixelPos.x;
+        s32 y = (ent->pixelPos.y / 256) - gDungeon->unk181e8.cameraPixelPos.y;
+
+        if (PortPixelInView(x, y, wide)) {
+#define sub_803F428(pos) PortPosInView(pos, wide)
+#else
 bool8 ShouldDisplayEntity(Entity *ent)
 {
     if (ent->isVisible) {
         s32 x = (ent->pixelPos.x / 256) - gDungeon->unk181e8.cameraPixelPos.x;
         s32 y = (ent->pixelPos.y / 256) - gDungeon->unk181e8.cameraPixelPos.y;
 
-#ifdef PORT
-        /* Port: the Full View shows more of the floor around the GBA
-         * screen; monsters, items and traps there must be drawn too */
-        if (x >= -32 - gPortViewMarginLeft && y >= -32 - gPortViewMarginTop && x <= 272 + gPortViewMarginRight && y <= 192 + gPortViewMarginBottom) {
-#else
         if (x >= -32 && y >= -32 && x <= 272 && y <= 192) {
 #endif
             UnkDungeonGlobal_unk181E8_sub *saveTyping = &gDungeon->unk181e8;
@@ -492,6 +541,32 @@ bool8 ShouldDisplayEntity(Entity *ent)
 
     return FALSE;
 }
+
+#ifdef PORT
+#undef sub_803F428
+
+/* the game's own test (logic and GBA view) */
+bool8 ShouldDisplayEntity(Entity *ent)
+{
+    return ShouldDisplayEntityImpl(ent, FALSE);
+}
+
+/* drawing only: visible anywhere in the Full View */
+bool8 Port_ShouldDrawEntity(Entity *ent)
+{
+    return ShouldDisplayEntityImpl(ent, PortWideView());
+}
+
+/* sub_8042768 (dungeon_8041AD0.c) for drawing a monster */
+bool8 Port_ShouldDrawMonster(Entity *pokemon)
+{
+    if (!pokemon->isVisible)
+        return FALSE;
+    if (gDungeon->unk181e8.blinded)
+        return gDungeon->unk181e8.cameraTarget == pokemon;
+    return Port_ShouldDrawEntity(pokemon);
+}
+#endif
 
 bool8 CanSeeTarget(Entity *entity, Entity *targetEntity)
 {

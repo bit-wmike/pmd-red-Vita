@@ -488,7 +488,11 @@ void Port_ViewAfterRender(void)
  * (2) Dungeon HUD: BG0 ink outside text boxes (status line, minimap) moves
  * to the frame's top-left corner (whole 8x8 cells in the BG0 shadow
  * tilemap, so a menu box is never split); the minimap's sprites go along.
- * Host: PMD_DOCK=0 off, 1 bottom only, 3 bottom + HUD (default). */
+ * (3) A block of boxes near the GBA screen's top (item info, the mailbox
+ * menu, a dungeon menu under the status line) moves up to the frame's top
+ * edge the same way; frame lines it leaves sample empty rows beyond line
+ * 160, where the HUD can still show.
+ * Host: PMD_DOCK bits 1 bottom, 2 HUD, 4 top (default 7, 0 off). */
 static uint16_t sWin0h[PORT_GBA_H]; /* WIN0H per GBA line (text boxes), latched at VBlank */
 static int sWinOn;
 static int sDockTop = PORT_GBA_H, sDockEnd; /* for the log: bottom block [sDockTop, 160); HUD cell rows moved (0 = HUD stays) */
@@ -500,6 +504,9 @@ static int sDockTop = PORT_GBA_H, sDockEnd; /* for the log: bottom block [sDockT
 static int sDockShift, sDockHad; /* current bottom shift; a bottom block was there last frame */
 static int sDockMinTop = PORT_GBA_H, sDockMinAge;
 static uint32_t sDockSig;
+#define DOCK_TOP_START 32 /* a top block starts at or above this line */
+#define DOCK_TOP_END 128  /* ... and ends above this line (bigger menus stay) */
+static int sTopShift, sTopHad, sTopMaxEnd, sTopMaxAge, sDockTopEnd;
 
 /* BG0 cells by VRAM row/column (dungeon): ink, inside a text box, HUD */
 #define CELL_INK 1
@@ -509,18 +516,22 @@ static unsigned char sCell[32][32];
 static int sHud;                         /* HUD cells found this frame */
 static int sHudRect[4], sCand, sCandRect[4]; /* GBA pixel rectangles (x0, x1, y0, y1) of the HUD and of the candidates */
 #define CELL_CAND 8
+#define CELL_MAP 16 /* palette 14: the minimap (and the floor's title) */
+#define CELL_STAT 32 /* a status line glyph: GBA row 0, tiles 0x280..0x2D7 (box borders: 0x297, 0x2D8 on) */
 static int sHudMaxRow;                   /* lowest GBA cell row with HUD ink */
 static int sHudHold;                     /* the HUD moved in the frame before */
+static int sStat, sStatRect[4];          /* the status line's cells this frame */
+static int sHudMoved;                    /* the HUD shows at the frame's top-left this frame */
 
 static int DockMode(void)
 {
 #ifndef __vita__
     static int mode = -1;
     if (mode < 0)
-        mode = getenv("PMD_DOCK") ? atoi(getenv("PMD_DOCK")) : 3;
+        mode = getenv("PMD_DOCK") ? atoi(getenv("PMD_DOCK")) : 7;
     return mode;
 #else
-    return 3;
+    return 7;
 #endif
 }
 
@@ -621,6 +632,10 @@ static int ScanHud(void)
             if (gx >= PORT_GBA_W || (hofs == 0 && vcol == 0))
                 continue;
             flag = TileInk(chars, map[row * 32 + vcol]) ? CELL_INK : 0;
+            if ((map[row * 32 + vcol] >> 12) == 14)
+                flag |= CELL_MAP;
+            if (gr == 0 && (flag & CELL_INK) && (map[row * 32 + vcol] & 0x3FF) >= 0x280 && (map[row * 32 + vcol] & 0x3FF) < 0x2D8)
+                flag |= CELL_STAT;
             if (dispcnt & 0x2000) {
                 for (y = gr * 8; y < gr * 8 + 8; y++) {
                     int l = sWin0h[y] >> 8, r = sWin0h[y] & 0xFF;
@@ -630,7 +645,7 @@ static int ScanHud(void)
                     }
                 }
             }
-            if (flag == CELL_INK) {
+            if ((flag & (CELL_INK | CELL_BOX)) == CELL_INK || (flag & CELL_STAT)) {
                 flag |= CELL_CAND;
                 RectAdd(sCandRect, !any, gx, gr * 8);
                 any = 1;
@@ -642,66 +657,46 @@ static int ScanHud(void)
     return any;
 }
 
-/* Picks the HUD among the candidates: the status line (the ink rows from
- * GBA row 0 down) and the rest (minimap) move each as a whole or not at
- * all: not when one of their cells touches a text box above GBA line
- * boxLimit (a menu's border or tab sticking out of its window; the docked
- * bottom block moves away anyway). The floor's title (no status line,
- * after frames without ink) never moves. Sets sHud and the rectangle;
- * returns the number of candidate cells left in place. */
-static int PickHud(int boxLimit)
+/* Picks the HUD among the candidates: the status line (its own glyph
+ * tiles, wherever boxes are) and the minimap (palette-14 ink outside the
+ * boxes; stays as a whole when part of it lies inside a box). Other ink
+ * outside boxes (a menu's tab or border sticking out of its window) is
+ * not HUD and stays with its menu. The floor's title (palette 14, no
+ * status line, after frames without ink) never moves. Sets sHud and the
+ * rectangle. */
+static void PickHud(void)
 {
     int hofs = IO16(0x10) & 0x1FF, vofs = IO16(0x12) & 0x1FF;
-    int gr, vcol, band, statusEnd = 0, touch[2] = {0, 0}, has[2] = {0, 0}, left = 0;
+    int gr, vcol, minimap = 1, hasStatus = 0, hasMap = 0;
 
     sHud = 0;
-    /* the status line: candidate rows from row 0 on */
-    for (gr = 0; gr < PORT_GBA_H / 8; gr++) {
-        int row = (gr + (vofs >> 3)) & 31, found = 0;
-        for (vcol = 0; vcol < 32 && !found; vcol++)
-            found = sCell[row][vcol] & CELL_CAND;
-        if (!found)
-            break;
-        statusEnd = gr + 1;
-    }
     for (gr = 0; gr < PORT_GBA_H / 8; gr++) {
         int row = (gr + (vofs >> 3)) & 31;
-        band = gr < statusEnd ? 0 : 1;
         for (vcol = 0; vcol < 32; vcol++) {
-            int dr, dc;
-            if (!(sCell[row][vcol] & CELL_CAND))
-                continue;
-            has[band] = 1;
-            for (dr = -1; dr <= 1; dr++) {
-                int g = gr + dr;
-                if (g < 0 || g >= PORT_GBA_H / 8 || g * 8 >= boxLimit)
-                    continue;
-                for (dc = -1; dc <= 1; dc++)
-                    touch[band] |= sCell[(row + dr) & 31][(vcol + dc) & 31] & CELL_BOX;
-            }
+            unsigned char f = sCell[row][vcol];
+            if (f & CELL_STAT)
+                hasStatus = 1;
+            else if ((f & (CELL_MAP | CELL_INK | CELL_BOX)) == (CELL_MAP | CELL_INK | CELL_BOX))
+                minimap = 0;
+            else if ((f & (CELL_MAP | CELL_CAND)) == (CELL_MAP | CELL_CAND))
+                hasMap = 1;
         }
     }
-    if (!has[0]) {
-        if (!sHudHold)
-            has[1] = 0; /* no status line: the floor's title, unless the HUD was moved just before */
-    } else if (touch[0]) {
-        has[0] = has[1] = 0; /* the status line stays: so does the minimap */
-    }
-    if (touch[1])
-        has[1] = 0;
+    minimap = minimap && hasMap && (hasStatus || sHudHold);
+    sStat = 0;
     for (gr = 0; gr < PORT_GBA_H / 8; gr++) {
         int row = (gr + (vofs >> 3)) & 31;
-        band = gr < statusEnd ? 0 : 1;
         for (vcol = 0; vcol < 32; vcol++) {
+            unsigned char f = sCell[row][vcol];
             int gx = (vcol * 8 - hofs) & 255;
-            if (!(sCell[row][vcol] & CELL_CAND))
+            if (!(f & CELL_STAT) && !((f & (CELL_MAP | CELL_CAND)) == (CELL_MAP | CELL_CAND) && minimap))
                 continue;
-            if (!has[band]) {
-                left++;
-                continue;
-            }
             if (gx > 248)
                 gx -= 256;
+            if (f & CELL_STAT) {
+                RectAdd(sStatRect, !sStat, gx, gr * 8);
+                sStat = 1;
+            }
             sCell[row][vcol] |= CELL_HUD;
             RectAdd(sHudRect, !sHud, gx, gr * 8);
             sHudMaxRow = gr;
@@ -709,7 +704,6 @@ static int PickHud(int boxLimit)
         }
     }
     sHudHold = sHud;
-    return left;
 }
 
 /* Lines of the GBA screen with UI: a text box (WIN0), BG0 pixels (text,
@@ -780,11 +774,51 @@ static int BottomBlock(const unsigned char ui[PORT_GBA_H], int *lowest)
     return s >= 0 ? t : 0;
 }
 
-/* Moves the HUD's cells in the BG0 shadow tilemap by (-dc, -dr) cells. */
-static void MoveHud(int dc, int dr, int cols)
+/* The top block: UI from near GBA line 0 down to a gap; returns its end
+ * (first line after it), 0 for none, PORT_GBA_H when it runs to the
+ * bottom; *first = its first line. */
+static int TopBlock(const unsigned char ui[PORT_GBA_H], int *first)
+{
+    /* while gliding back, a block that left the top still counts */
+    int limit = sTopShift > 0 ? PORT_GBA_H : DOCK_TOP_START, s, e, gap;
+    for (s = 0; s < limit && !ui[s]; s++)
+        ;
+    *first = s;
+    if (s >= limit)
+        return 0;
+    for (e = s + 1, gap = 0; s < PORT_GBA_H; s++) {
+        if (ui[s]) {
+            e = s + 1;
+            gap = 0;
+        } else if (++gap >= DOCK_GAP) {
+            break;
+        }
+    }
+    return s < PORT_GBA_H ? e : PORT_GBA_H;
+}
+
+/* A shift that glides by DOCK_STEP to its target while the block stays,
+ * jumps for a new block (or a new box set that wants more shift). */
+static int Glide(int shift, int target, int had, int sigChanged)
+{
+    if (!had || (sigChanged && target > shift))
+        return target;
+    if (shift < target)
+        return shift + DOCK_STEP < target ? shift + DOCK_STEP : target;
+    if (shift > target)
+        return shift - DOCK_STEP > target ? shift - DOCK_STEP : target;
+    return shift;
+}
+
+/* Moves the HUD's cells in the BG0 shadow tilemap dc cells to the left and
+ * to the rows that show them sUiDy lines higher: GBA line g appears at
+ * frame line g; map[] = the GBA line (or virtual line >= 160) each frame
+ * line samples. Frame lines from skipFrom on (the bottom block) are left
+ * out. */
+static void MoveHud(int dc, int cols, const int16_t *map, int skipFrom)
 {
     static struct { unsigned char row, col; uint16_t entry; } moved[32 * SHADOW_COLS];
-    int hofs = IO16(0x10) & 0x1FF;
+    int hofs = IO16(0x10) & 0x1FF, vofs = IO16(0x12) & 0x1FF;
     int fine = (hofs - sUiDx) & 7;
     uint16_t *shadow = sShadow[0];
     int n = 0, r, c, k;
@@ -803,31 +837,47 @@ static void MoveHud(int dc, int dr, int cols)
         }
     }
     for (k = 0; k < n; k++) {
-        int rd = (moved[k].row - dr) & 31, cd = moved[k].col - dc;
-        uint16_t *cell;
+        int gr = (moved[k].row - (vofs >> 3)) & 31, cd = moved[k].col - dc, line, last = -1;
         if (cd < 0)
             continue;
-        cell = shadow + rd * SHADOW_COLS + cd;
-        /* a text box or other ink already there stays on top */
-        if (*cell != BLANK_ENTRY) {
-            int vcol = ((8 * cd - fine - sUiDx + hofs) >> 3) & 31;
-            if (sCell[rd][vcol] & (CELL_INK | CELL_BOX))
+        for (line = gr * 8; line < gr * 8 + 8 && line < skipFrom && line < sHeight; line++) {
+            int rd = ((map[line] + vofs) >> 3) & 31, vcol;
+            uint16_t *cell;
+            if (rd == last)
                 continue;
+            last = rd;
+            cell = shadow + rd * SHADOW_COLS + cd;
+            /* other ink already there stays on top */
+            vcol = ((8 * cd - fine - sUiDx + hofs) >> 3) & 31;
+            if (*cell != BLANK_ENTRY && (sCell[rd][vcol] & CELL_INK) && !(sCell[rd][vcol] & CELL_HUD))
+                continue;
+            *cell = moved[k].entry;
         }
-        *cell = moved[k].entry;
     }
+}
+
+static uint32_t WindowSig(void)
+{
+    uint32_t sig = 2166136261u;
+    int i;
+    for (i = 0; i < PORT_GBA_H; i++)
+        sig = (sig ^ sWin0h[i]) * 16777619u;
+    return sig;
 }
 
 static void Dock(void)
 {
     unsigned char ui[PORT_GBA_H];
     int mode = DockMode(), shift = sHeight - sUiDy - PORT_GBA_H;
-    int top = PORT_GBA_H, lowest = -1, hud = 0, cand, line, i, sigChanged = 0;
+    int top = PORT_GBA_H, lowest = -1, hud = 0, line, i, sigChanged, skip = 0;
+    int end = 0, first = 0, topShift = sUiDy; /* the top block [first, end) */
     int cols = sWidth / 8 + 2 > SHADOW_COLS ? SHADOW_COLS : sWidth / 8 + 2;
+    uint32_t sig;
 
     virtuappu_mode1_ui_map_active = 0;
     sDockTop = PORT_GBA_H;
     sDockEnd = 0;
+    sHudMoved = 0;
     {
         int ok = mode && sActive && sWinOn && shift > 0 && sUiDy > 0;
         if (sSceneLatched == PORT_SCENE_DUNGEON)
@@ -836,72 +886,89 @@ static void Dock(void)
             ok = ok && !sPictureMap && sContentH >= sHeight; /* else the box would land on black margins */
         else
             ok = 0;
-        cand = ok ? ScanHud() : 0;
-        if (!cand)
+        if (ok && ScanHud())
+            PickHud();
+        else
             sHud = sHudHold = 0;
-        if (!ok || !UiLines(ui, cand ? CELL_CAND : 0)) {
-            sDockHad = sDockShift = 0;
+        hud = sHud;
+        /* in a dungeon the minimap (and the floor's title) is never a box */
+        skip = (hud ? CELL_HUD : 0) | (sSceneLatched == PORT_SCENE_DUNGEON ? CELL_MAP : 0);
+        if (!ok || !UiLines(ui, skip)) {
+            sDockHad = sDockShift = sTopHad = sTopShift = 0;
             sDockMinTop = PORT_GBA_H;
             return;
         }
     }
 
-    if (mode & 1)
+    top = BottomBlock(ui, &lowest);
+    /* the HUD moves up by sUiDy: its cells must stay above the lines the
+     * docked bottom block shows (else the HUD stays and counts as UI) */
+    if (hud && top < PORT_GBA_H && sHudMaxRow - sUiDy / 8 >= (top - 1) >> 3) {
+        hud = sHud = sHudHold = 0;
+        skip &= ~CELL_HUD;
+        UiLines(ui, skip);
         top = BottomBlock(ui, &lowest);
-    if (cand) {
-        /* boxes of a block docked at the bottom move away from the HUD
-         * (its top border row can start up to a cell above the block) */
-        int left = PickHud(top >= DOCK_MIN_TOP && lowest >= DOCK_BOTTOM ? top - 8 : PORT_GBA_H);
-        hud = sHud;
-        /* the HUD moves up by sUiDy: its cells must stay above the lines the
-         * docked block shows (else the HUD stays and counts as UI) */
-        if (hud && top < PORT_GBA_H && sHudMaxRow - sUiDy / 8 >= (top - 1) >> 3)
-            hud = sHud = sHudHold = 0;
-        if (left || !hud) {
-            UiLines(ui, hud ? CELL_HUD : 0);
-            if (mode & 1)
-                top = BottomBlock(ui, &lowest);
-        }
     }
-    if (mode & 1) {
-        /* the highest line of the last DOCK_HOLD frames: a blinking cursor
-         * that joins two boxes now and then must not make them jump */
-        uint32_t sig = 2166136261u;
-        for (i = 0; i < PORT_GBA_H; i++)
-            sig = (sig ^ sWin0h[i]) * 16777619u;
-        if (top == PORT_GBA_H || !sDockHad || sig != sDockSig) {
-            sDockMinTop = top;
-            sDockMinAge = 0;
-        } else if (top <= sDockMinTop || ++sDockMinAge > DOCK_HOLD) {
-            sDockMinTop = top;
-            sDockMinAge = 0;
-        } else {
-            top = sDockMinTop;
-        }
-        sigChanged = sig != sDockSig;
-        sDockSig = sig; /* the text boxes' shape: a new box set forgets the old highest line */
+    if (mode & 4)
+        end = TopBlock(ui, &first);
+
+    sig = WindowSig();
+    sigChanged = sig != sDockSig;
+    sDockSig = sig;
+    /* bottom: the highest line of the last DOCK_HOLD frames (a blinking
+     * cursor that joins two boxes now and then must not make them jump) */
+    if (top == PORT_GBA_H || !sDockHad || sigChanged) {
+        sDockMinTop = top;
+        sDockMinAge = 0;
+    } else if (top <= sDockMinTop || ++sDockMinAge > DOCK_HOLD) {
+        sDockMinTop = top;
+        sDockMinAge = 0;
+    } else {
+        top = sDockMinTop;
     }
-    /* the shift: full for a bottom block, none for a big menu; a block that
-     * grows or shrinks across that limit (a menu sliding in) glides there
-     * instead of jumping, a block that just appeared takes it at once */
+    /* top: the lowest end likewise */
+    if (end == 0 || !sTopHad || sigChanged) {
+        sTopMaxEnd = end;
+        sTopMaxAge = 0;
+    } else if (end >= sTopMaxEnd || ++sTopMaxAge > DOCK_HOLD) {
+        sTopMaxEnd = end;
+        sTopMaxAge = 0;
+    } else {
+        end = sTopMaxEnd;
+    }
+    /* the shifts: full for a block at an edge, none for a big menu (or
+     * blocks that meet); a block crossing that limit glides */
     {
-        int target = top >= DOCK_MIN_TOP && lowest >= DOCK_BOTTOM ? shift : 0;
-        if (top == PORT_GBA_H)
-            sDockShift = 0;
-        else if (!sDockHad || (sigChanged && target > sDockShift))
-            sDockShift = target; /* a new box goes to the edge at once */
-        else if (sDockShift < target)
-            sDockShift = sDockShift + DOCK_STEP < target ? sDockShift + DOCK_STEP : target;
-        else if (sDockShift > target)
-            sDockShift = sDockShift - DOCK_STEP > target ? sDockShift - DOCK_STEP : target;
+        int target = (mode & 1) && top >= DOCK_MIN_TOP && lowest >= DOCK_BOTTOM ? shift : 0;
+        sDockShift = top == PORT_GBA_H ? 0 : Glide(sDockShift, target, sDockHad, sigChanged);
         sDockHad = top < PORT_GBA_H;
         if (sDockShift == 0)
             top = PORT_GBA_H;
         shift = sDockShift;
+
+        target = end > 0 && first <= DOCK_TOP_START && end <= DOCK_TOP_END && end + DOCK_GAP <= top ? topShift : 0;
+        sTopShift = end == 0 ? 0 : Glide(sTopShift, target, sTopHad, sigChanged);
+        sTopHad = end > 0;
+        if (sTopShift == 0 || end >= top)
+            end = 0;
+        topShift = sTopShift;
     }
 
+    /* frame line -> GBA line of the UI layers */
+    for (line = 0; line < sHeight; line++) {
+        int v = line - sUiDy;
+        if (end > 0 && line < end + sUiDy - topShift)
+            v = line - sUiDy + topShift;
+        else if (end > 0 && line < end + sUiDy)
+            v = PORT_GBA_H + line - ((end + sUiDy - topShift) & ~7); /* empty rows (the HUD may pass there) */
+        else if (v >= top)
+            v = v - shift >= top ? v - shift : top - 1; /* the freed lines show the empty line above */
+        virtuappu_mode1_ui_map[line] = (int16_t)v;
+    }
+    virtuappu_mode1_ui_map_active = end > 0 || top < PORT_GBA_H;
+
     if (hud) {
-        MoveHud(sUiDx / 8, sUiDy / 8, cols);
+        MoveHud(sUiDx / 8, cols, virtuappu_mode1_ui_map, top < PORT_GBA_H ? top + sUiDy : sHeight);
         for (i = 0; i < 128; i++) {
             if (!HudSprite(i, CELL_HUD))
                 continue;
@@ -909,25 +976,33 @@ static void Dock(void)
             virtuappu_mode1_obj_dy[i] = (int16_t)(virtuappu_mode1_obj_dy[i] - sUiDy);
         }
         sDockEnd = sHudMaxRow + 1;
+        sHudMoved = 1;
     }
-    if (top == PORT_GBA_H)
-        return;
-
-    for (line = 0; line < sHeight; line++) {
-        int v = line - sUiDy;
-        if (v >= top)
-            v = v - shift >= top ? v - shift : top - 1; /* the freed lines show the empty line above */
-        virtuappu_mode1_ui_map[line] = (int16_t)v;
-    }
-    virtuappu_mode1_ui_map_active = 1;
     for (i = 0; i < 128; i++) {
         int x0, x1, y0, y1;
         if (!DockSprite(i) || (hud && HudSprite(i, CELL_HUD)) || !SlotRect(i, &x0, &x1, &y0, &y1))
             continue;
-        if (y0 >= top && y0 < PORT_GBA_H)
+        if (top < PORT_GBA_H && y0 >= top && y0 < PORT_GBA_H)
             virtuappu_mode1_obj_dy[i] = (int16_t)(virtuappu_mode1_obj_dy[i] + shift);
+        else if (end > 0 && y0 < end && y1 > first)
+            virtuappu_mode1_obj_dy[i] = (int16_t)(virtuappu_mode1_obj_dy[i] - topShift);
     }
     sDockTop = top;
+    sDockTopEnd = end;
+}
+
+/* The dungeon status line in the frame, when the HUD shows at the frame's
+ * top-left: its left/top and right edge (port/port_overlay.c puts the
+ * partners' HP beside it). */
+int Port_ViewHudStatus(int *x0, int *y0, int *x1)
+{
+    int dx = sUiDx - (sUiDx & ~7);
+    if (!sHudMoved || !sStat)
+        return 0;
+    *x0 = sStatRect[0] + dx;
+    *y0 = sStatRect[2];
+    *x1 = sStatRect[1] + dx;
+    return 1;
 }
 
 void Port_ViewOnVBlank(void)
@@ -1306,6 +1381,7 @@ void Port_ViewBeforeRender(int *width, int *height)
         virtuappu_mode1_win_dx = virtuappu_mode1_win_dy = 0;
         virtuappu_mode1_line_dy = 0;
         virtuappu_mode1_ui_map_active = 0;
+        sHudMoved = 0;
         for (i = 0; i < 4; i++)
             virtuappu_mode1_bg_dx[i] = virtuappu_mode1_bg_dy[i] = 0;
         *width = PORT_GBA_W;
@@ -1466,10 +1542,10 @@ void Port_ViewBeforeRender(int *width, int *height)
 #ifndef __vita__
     if (getenv("PMD_DOCK_LOG")) {
         static int lastTop = -1, lastEnd = -1;
-        if (sDockTop != lastTop || sDockEnd != lastEnd)
-            Platform_Log("dock %u: scene %d bottom block from %d (shift %d), hud rows %d\n", Port_FrameCounter(), sSceneLatched, sDockTop, sDockShift, sDockEnd);
+        if (sDockTop != lastTop || sDockEnd + 1000 * sDockTopEnd != lastEnd)
+            Platform_Log("dock %u: scene %d bottom block from %d (shift %d), top block to %d (shift %d), hud rows %d\n", Port_FrameCounter(), sSceneLatched, sDockTop, sDockShift, sDockTopEnd, sTopShift, sDockEnd);
         lastTop = sDockTop;
-        lastEnd = sDockEnd;
+        lastEnd = sDockEnd + 1000 * sDockTopEnd;
     }
 #endif
     DumpState();
