@@ -647,12 +647,29 @@ static void DrawPanels(void)
     DrawBottomBar(p);
     if (p->inDungeon && p->dungeonName[0] && sGameY >= 20) {
         /* the dungeon's name centred in the frame above the game (room for
-         * the long names of later dungeons) */
+         * the long names of later dungeons), followed by the next open job
+         * here: the lowest floor at or below the current one (Mike) */
         float scale = sGameY >= 30 ? 0.95f : 0.75f;
-        int tw = vita2d_pgf_text_width(sFont, scale, p->dungeonName);
+        char line[200];
+        const struct PortPanelJob *best = NULL;
+        int k, tw;
+        for (k = 0; k < p->jobCount && k < PORT_PANEL_JOBS; k++) {
+            const struct PortPanelJob *j = &p->jobs[k];
+            if (!j->here || j->status != PORT_JOBST_OPEN)
+                continue;
+            if (best == NULL || (j->floor >= p->floor && (best->floor < p->floor || j->floor < best->floor)))
+                best = j;
+        }
+        if (best != NULL)
+            snprintf(line, sizeof(line), "%s   \xc2\xb7   Job %s: %s", p->dungeonName,
+                     best->floorText[0] ? best->floorText : "-", best->what);
+        else
+            snprintf(line, sizeof(line), "%s", p->dungeonName);
+        while ((tw = vita2d_pgf_text_width(sFont, scale, line)) > sGameW - 24 && scale > 0.55f)
+            scale -= 0.05f;
         int tx = (int)(sGameX + (sGameW - tw) / 2);
         vita2d_draw_rectangle((float)tx - 10, 3, (float)tw + 20, sGameY - 6, PANEL_BG);
-        vita2d_pgf_draw_text(sFont, tx, (int)(sGameY / 2 + 8 * scale), PANEL_HEAD, scale, p->dungeonName);
+        vita2d_pgf_draw_text(sFont, tx, (int)(sGameY / 2 + 8 * scale), PANEL_HEAD, scale, line);
     }
 }
 
@@ -897,6 +914,13 @@ enum {
 };
 #define MENU_ROWS 13 /* items drawn at once */
 
+/* What Square and Triangle press (port menu; 0 and 1 are the old
+ * settings: B, and L+R / L+A). */
+static const char *const sSquareNames[6] = {"B", "Gegenstand werfen (L+R)", "L", "R", "Attacke einsetzen (L+A)", "Select"};
+static const char *const sTriangleNames[6] = {"B", "Attacke einsetzen (L+A)", "L", "R", "Gegenstand werfen (L+R)", "Select"};
+static const uint16_t sSquareKeys[6] = {KEY_B, KEY_L | KEY_R, KEY_L, KEY_R, KEY_L | KEY_A, KEY_SELECT};
+static const uint16_t sTriangleKeys[6] = {KEY_B, KEY_L | KEY_A, KEY_L, KEY_R, KEY_L | KEY_R, KEY_SELECT};
+
 static int IsHeading(int item)
 {
     return item == MI_H_DISPLAY || item == MI_H_CONTROLS || item == MI_H_COMFORT || item == MI_H_SAVE || item == MI_H_CHEATS;
@@ -935,8 +959,8 @@ static void MenuLine(int item, char *buf, size_t size)
                 snprintf(buf, size, "Sprache: Englisch (die ROM hat nur eine Sprache)");
             break;
         case MI_H_CONTROLS: snprintf(buf, size, "-- Steuerung --"); break;
-        case MI_SQUARE: snprintf(buf, size, "Viereck: %s", gPortConfig.squareThrow ? "Gegenstand werfen (L+R)" : "B"); break;
-        case MI_TRIANGLE: snprintf(buf, size, "Dreieck: %s", gPortConfig.triangleMove ? "Attacke einsetzen (L+A)" : "B"); break;
+        case MI_SQUARE: snprintf(buf, size, "Viereck: %s", sSquareNames[(unsigned)gPortConfig.squareThrow < 6 ? gPortConfig.squareThrow : 1]); break;
+        case MI_TRIANGLE: snprintf(buf, size, "Dreieck: %s", sTriangleNames[(unsigned)gPortConfig.triangleMove < 6 ? gPortConfig.triangleMove : 1]); break;
         case MI_RSTICK: snprintf(buf, size, "Rechter Stick = diagonal gehen (R+Richtung): %s", OnOff(gPortConfig.rightStickDiag)); break;
         case MI_TURBO: snprintf(buf, size, "Touchscreen halten = Schnellvorlauf: %s", OnOff(gPortConfig.turbo)); break;
         case MI_H_COMFORT: snprintf(buf, size, "-- Komfort --"); break;
@@ -1003,8 +1027,8 @@ static int MenuChange(int item, int d)
         case MI_STYLE: gPortConfig.displayStyle = Wrap(gPortConfig.displayStyle, step, 3); break;
         case MI_FRAME: gPortConfig.frame = Wrap(gPortConfig.frame, step, 3); break;
         case MI_FPS: gPortConfig.frameRate30 ^= 1; break;
-        case MI_SQUARE: gPortConfig.squareThrow ^= 1; break;
-        case MI_TRIANGLE: gPortConfig.triangleMove ^= 1; break;
+        case MI_SQUARE: gPortConfig.squareThrow = Wrap(gPortConfig.squareThrow, step, 6); break;
+        case MI_TRIANGLE: gPortConfig.triangleMove = Wrap(gPortConfig.triangleMove, step, 6); break;
         case MI_RSTICK: gPortConfig.rightStickDiag ^= 1; break;
         case MI_TURBO: gPortConfig.turbo ^= 1; break;
         case MI_TEXT_INSTANT: gPortConfig.textInstant ^= 1; break;
@@ -1537,8 +1561,10 @@ uint16_t Platform_PollKeys(void)
     if (pad.buttons & SCE_CTRL_CIRCLE) keys |= KEY_B;   /* cancel / run */
     /* Square: throw the set item (the game's L+R), Triangle: use the set
      * move (L+A); each can be turned back into a plain B in the menu. */
-    if (pad.buttons & SCE_CTRL_SQUARE) keys |= gPortConfig.squareThrow ? (KEY_L | KEY_R) : KEY_B;
-    if (pad.buttons & SCE_CTRL_TRIANGLE) keys |= gPortConfig.triangleMove ? (KEY_L | KEY_A) : KEY_B;
+    if (pad.buttons & SCE_CTRL_SQUARE)
+        keys |= sSquareKeys[(unsigned)gPortConfig.squareThrow < 6 ? gPortConfig.squareThrow : 1];
+    if (pad.buttons & SCE_CTRL_TRIANGLE)
+        keys |= sTriangleKeys[(unsigned)gPortConfig.triangleMove < 6 ? gPortConfig.triangleMove : 1];
     if (pad.buttons & SCE_CTRL_LTRIGGER) keys |= KEY_L;
     if (pad.buttons & SCE_CTRL_RTRIGGER) keys |= KEY_R;
     if (pad.buttons & SCE_CTRL_START) keys |= KEY_START;
