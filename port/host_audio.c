@@ -249,6 +249,44 @@ static u32 PhaseInc(u64 numerator, u64 denominator)
     return (u32)((numerator << 32) / (denominator * PORT_AUDIO_RATE));
 }
 
+/* The phase steps only change with the frequency registers: computed once
+ * per change instead of a 64-bit division per sample (slow on ARM). */
+static u32 SquareInc(int ch, int freqReg)
+{
+    static int key[2] = {-1, -1};
+    static u32 inc[2];
+    if (freqReg != key[ch]) {
+        key[ch] = freqReg;
+        inc[ch] = PhaseInc(131072, 2048 - freqReg);
+    }
+    return inc[ch];
+}
+
+static u32 WaveInc(int freqReg)
+{
+    static int key = -1;
+    static u32 inc;
+    if (freqReg != key) {
+        key = freqReg;
+        inc = PhaseInc(2097152, (u64)(2048 - freqReg) * 32);
+    }
+    return inc;
+}
+
+static u64 NoiseInc(u16 r)
+{
+    static int key = -1;
+    static u64 inc;
+    if ((r & 0xF7) != key) {
+        int shift = (r >> 4) & 0xF;
+        u64 num = 1048576;
+        u64 den = (u64)((r & 7) ? (r & 7) * 2 : 1) << (shift + 1);
+        key = r & 0xF7;
+        inc = (num << 32) / (den * PORT_AUDIO_RATE);
+    }
+    return inc;
+}
+
 static void PsgSample(int *left, int *right)
 {
     int ch[4] = {0, 0, 0, 0};
@@ -264,7 +302,7 @@ static void PsgSample(int *left, int *right)
     for (i = 0; i < 2; i++) {
         struct Square *s = &sSq[i];
         if (s->on && s->env.volume) {
-            s->phase += PhaseInc(131072, 2048 - s->freqReg);
+            s->phase += SquareInc(i, s->freqReg);
             ch[i] = sDuty[s->duty][s->phase >> 29] ? s->env.volume : -s->env.volume;
         }
     }
@@ -273,7 +311,7 @@ static void PsgSample(int *left, int *right)
         u16 cntH = IO16(0x72);
         int freqReg = IO16(0x74) & 0x7FF;
         int pos, nib, vol;
-        sWave.phase += PhaseInc(2097152, (u64)(2048 - freqReg) * 32);
+        sWave.phase += WaveInc(freqReg);
         pos = (int)(sWave.phase >> 27);
         nib = (gHostIo[0x90 + pos / 2] >> ((pos & 1) ? 0 : 4)) & 0xF;
         vol = (cntH >> 13) & 3;
@@ -288,10 +326,7 @@ static void PsgSample(int *left, int *right)
 
     if (sNoise.on && sNoise.env.volume) {
         u16 r = IO16(0x7C);
-        int shift = (r >> 4) & 0xF;
-        u64 num = 1048576;
-        u64 den = (u64)((r & 7) ? (r & 7) * 2 : 1) << (shift + 1);
-        sNoise.phase += ((num << 32) / (den * PORT_AUDIO_RATE));
+        sNoise.phase += NoiseInc(r);
         while (sNoise.phase >= ((u64)1 << 32)) {
             int bit = (sNoise.lfsr ^ (sNoise.lfsr >> 1)) & 1;
             sNoise.phase -= (u64)1 << 32;
@@ -328,7 +363,8 @@ void HostAudio_EndFrame(void)
     for (i = 0; i < FRAME_OUT; i++) {
         int a, b, l = 0, r = 0, pl, pr;
         if (sFifoCount > 0) {
-            int fixed = (int)(((long long)i * sFifoCount << 8) / FRAME_OUT);
+            /* i * count * 256 < 2^31 (count <= MAX_FIFO): 32-bit division by a constant */
+            int fixed = (i * sFifoCount << 8) / FRAME_OUT;
             int idx = fixed >> 8, frac = fixed & 0xFF;
             int a0 = idx == 0 ? sLastA : sFifoA[idx - 1];
             int b0 = idx == 0 ? sLastB : sFifoB[idx - 1];

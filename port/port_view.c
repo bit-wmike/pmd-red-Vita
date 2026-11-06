@@ -637,20 +637,13 @@ static void FillGround(int bg, const MapRender *mr, int layer, int x0, int y0, i
             shadow[r] = BLANK_ENTRY;
         return;
     }
-    for (r = 0; r < 32; r++) {
-        int ty = ty0 + r;
-        uint16_t *row = shadow + (ty & 31) * SHADOW_COLS;
-        int wy = ty;
-        int cy, sy;
-        if (mr->wrapAround) {
-            wy %= heightTiles;
-            if (wy < 0)
-                wy += heightTiles;
-        }
-        cy = FloorDiv(wy, dim);
-        sy = wy - cy * dim;
+    /* The column part (wrap, clamp, chunk column) is the same for all 32
+     * rows: computed once (the Vita's CPU has no divide instruction). */
+    {
+        int colChunk[SHADOW_COLS], colSub[SHADOW_COLS];
+        uint8_t colBlank[SHADOW_COLS];
         for (c = 0; c < cols; c++) {
-            int tx = tx0 + c, wx = tx, cx, sx;
+            int tx = tx0 + c, wx = tx, cx;
             if (mr->wrapAround) {
                 wx %= widthTiles;
                 if (wx < 0)
@@ -664,18 +657,35 @@ static void FillGround(int bg, const MapRender *mr, int layer, int x0, int y0, i
                 else if (wx >= widthTiles)
                     wx = widthTiles - 1;
             }
-            if (wx < 0 || wy < 0 || wx >= widthTiles || wy >= heightTiles || cy >= mr->heightChunks ||
-                (sPictureMap && (ty * 8 < mr->cameraPos.y || ty * 8 >= mr->cameraPos.y + PORT_GBA_H))) {
-                row[c] = BLANK_ENTRY;
-                continue;
-            }
             cx = FloorDiv(wx, dim);
-            sx = wx - cx * dim;
-            if (cx >= mr->widthChunks || cx >= 64) {
-                row[c] = BLANK_ENTRY;
+            colChunk[c] = cx;
+            colSub[c] = wx - cx * dim;
+            colBlank[c] = wx < 0 || wx >= widthTiles || cx >= mr->widthChunks || cx >= 64;
+        }
+        for (r = 0; r < 32; r++) {
+            int ty = ty0 + r;
+            uint16_t *row = shadow + (ty & 31) * SHADOW_COLS;
+            int wy = ty;
+            int cy, sy;
+            if (mr->wrapAround) {
+                wy %= heightTiles;
+                if (wy < 0)
+                    wy += heightTiles;
+            }
+            cy = FloorDiv(wy, dim);
+            sy = wy - cy * dim;
+            if (wy < 0 || wy >= heightTiles || cy >= mr->heightChunks ||
+                (sPictureMap && (ty * 8 < mr->cameraPos.y || ty * 8 >= mr->cameraPos.y + PORT_GBA_H))) {
+                for (c = 0; c < cols; c++)
+                    row[c] = BLANK_ENTRY;
                 continue;
             }
-            row[c] = tiles[chunks[cy * 64 + cx] * 9 + sy * dim + sx];
+            {
+                const u16 *chunkRow = chunks + cy * 64;
+                const u16 *tileRow = tiles + sy * dim;
+                for (c = 0; c < cols; c++)
+                    row[c] = colBlank[c] ? BLANK_ENTRY : tileRow[chunkRow[colChunk[c]] * 9 + colSub[c]];
+            }
         }
     }
 }
