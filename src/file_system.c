@@ -123,6 +123,11 @@ static const File *Port_VariantFile(const File *file, s32 cursor)
     int lang = gPortConfig.language;
     const unsigned char *rom;
     size_t n = strlen(name);
+    /* the health and safety screen (S05) is skipped on the Vita (Mike):
+     * fast forward with a button press until the next picture map (the
+     * logo S04) loads */
+    if (name[0] == 'S' && name[1] == '0' && name[2] >= '0' && name[2] <= '9' && name[3] == 0)
+        Port_SetSkipScene(name[2] == '5');
     if (lang <= PORT_LANG_EN || lang >= PORT_LANG_COUNT || !Port_TextMultilingual())
         return Port_ChooseFile(file, cursor);
     if (!(n == 3 || n == 4) || name[0] != 'S' || name[1] < '0' || name[1] > '9' || name[2] < '0' || name[2] > '9' ||

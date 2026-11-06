@@ -293,6 +293,8 @@ void HostRunFrame(void)
     HPROF_MARK(HPROF_AUDIO);
 
     keys = Port_TranslateKeys(Platform_PollKeys());
+    if (Port_SkipSceneActive())
+        keys = (sFrameCounter & 8) ? 0x001 : 0; /* A pressed now and then */
     IO16(0x130) = (u16)(~keys & 0x3FF);
 
     Port_GameFrame(sMainLoopHalt);

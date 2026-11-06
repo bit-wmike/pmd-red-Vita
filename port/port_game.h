@@ -19,4 +19,7 @@ int Port_TurboActive(void);
 int Port_ExpMultiplier(void);
 int Port_NoHunger(void);
 
+void Port_SetSkipScene(int on);
+int Port_SkipSceneActive(void);
+
 #endif

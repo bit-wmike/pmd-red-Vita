@@ -26,9 +26,30 @@ uint16_t Port_TranslateKeys(uint16_t keys)
     return keys & 0x3FF;
 }
 
+static int sSkipScene;
+
+/* A scene the port runs through at once (the health and safety screen on
+ * the Vita; on the host only with PMD_SKIP_WARNING, so that the test
+ * scripts stay in step). */
+void Port_SetSkipScene(int on)
+{
+#ifndef __vita__
+    if (on && !getenv("PMD_SKIP_WARNING"))
+        on = 0;
+#endif
+    if (on != sSkipScene)
+        Platform_Log("skip scene: %s\n", on ? "on" : "off");
+    sSkipScene = on;
+}
+
+int Port_SkipSceneActive(void)
+{
+    return sSkipScene;
+}
+
 int Port_TurboActive(void)
 {
-    return sTurbo;
+    return sTurbo || sSkipScene;
 }
 
 /* --------------------------------------------------------------- cheats */
