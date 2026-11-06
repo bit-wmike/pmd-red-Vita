@@ -39,6 +39,8 @@ int16_t virtuappu_mode1_obj_base_x[128];
 uint8_t virtuappu_mode1_obj_staged[128];
 int16_t virtuappu_mode1_obj_base_y[128];
 int virtuappu_mode1_line_dy;
+int virtuappu_mode1_ui_map_active;
+int16_t virtuappu_mode1_ui_map[MODE1_GBA_HEIGHT];
 
 /* Window edges in GBA-screen coordinates -> wide frame coordinates. */
 static inline void mode1_port_window(int* left, int* right, int* top, int* bottom) {
@@ -4291,10 +4293,22 @@ void virtuappu_mode1_render_frame(const PPUMemory* ppu) {
      * critical path and point every thread's override straight at io_mem in the
      * parallel loop below. Byte-exact: each snapshot equalled io_mem anyway. */
     const bool per_line_io = (virtuappu_mode1_pre_line_callback != NULL);
+    /* PMD docked UI: the UI registers of every GBA line (index 0 = before
+     * line 0's events, s + 1 = after line s's), replayed below onto the
+     * output lines that show that GBA line's UI. */
+    static uint8_t ui_source_io[MODE1_GBA_NATIVE_HEIGHT + 1][MODE1_RENDER_IO_SNAPSHOT_SIZE];
+    const bool ui_map = per_line_io && virtuappu_mode1_ui_map_active && !mode1_bg3_native_bounds_active() &&
+                        virtuappu_mode1_line_dy >= 0 &&
+                        frame_height >= virtuappu_mode1_line_dy + MODE1_GBA_NATIVE_HEIGHT;
+    if (ui_map) memcpy(ui_source_io[0], mode1_memory.io_mem, MODE1_RENDER_IO_SNAPSHOT_SIZE);
     for (line = 0; line < frame_height; ++line) {
         if (per_line_io) {
             const int source_line = mode1_pre_line_source_for_output(line);
-            if (source_line >= 0) virtuappu_mode1_pre_line_callback(source_line);
+            if (source_line >= 0) {
+                virtuappu_mode1_pre_line_callback(source_line);
+                if (ui_map)
+                    memcpy(ui_source_io[source_line + 1], mode1_memory.io_mem, MODE1_RENDER_IO_SNAPSHOT_SIZE);
+            }
             /* Display rendering only reads registers through BLDY (0x54). */
             memcpy(io_snapshots[line], mode1_memory.io_mem, MODE1_RENDER_IO_SNAPSHOT_SIZE);
             per_line_dispcnt[line] =
@@ -4320,6 +4334,29 @@ void virtuappu_mode1_render_frame(const PPUMemory* ppu) {
         virtuappu_mode1_affine_precompute(frame_height, aff_init_x, aff_init_y, aff_line_ref_x, aff_line_ref_y,
                                           aff_pb, aff_pd, virtuappu_mode1_bg2x_hdma_strobe,
                                           virtuappu_mode1_bg2y_hdma_strobe, aff_ref_x, aff_ref_y);
+    }
+    if (ui_map) {
+        /* output lines whose UI comes from another GBA line: BG0/BG1
+         * scroll and WIN0H (text boxes) of that line, the scroll moved so
+         * that the line samples GBA line ui_map[line] */
+        for (line = 0; line < frame_height; ++line) {
+            const int v = virtuappu_mode1_ui_map[line];
+            const int delta = v - (line - virtuappu_mode1_line_dy);
+            if (delta == 0) continue;
+            const uint8_t* const u =
+                ui_source_io[v < 0 ? 0 : v >= MODE1_GBA_NATIVE_HEIGHT ? MODE1_GBA_NATIVE_HEIGHT : v + 1];
+            uint8_t* const o = io_snapshots[line];
+            for (int bg = 0; bg < 2; ++bg) {
+                const int off = MODE1_IO_BG0HOFS + bg * 4;
+                const uint16_t vofs = (uint16_t)(((u[off + 2] | (u[off + 3] << 8)) + delta) & 0x1FF);
+                o[off] = u[off];
+                o[off + 1] = u[off + 1];
+                o[off + 2] = (uint8_t)vofs;
+                o[off + 3] = (uint8_t)(vofs >> 8);
+            }
+            o[MODE1_IO_WIN0H] = u[MODE1_IO_WIN0H];
+            o[MODE1_IO_WIN0H + 1] = u[MODE1_IO_WIN0H + 1];
+        }
     }
 
     /* Palette RAM is final for the frame here (fade engine wrote it before this

@@ -46,6 +46,11 @@ extern int16_t virtuappu_mode1_obj_base_y[128];
 extern uint8_t virtuappu_mode1_obj_staged[128];
 /* Source GBA scanline = output line - line_dy (wide view shifted down). */
 extern int virtuappu_mode1_line_dy;
+/* PMD port, docked UI: when ui_map_active, output line L shows the UI
+ * layers (BG0/BG1 scroll and WIN0H) of GBA line ui_map[L] instead of
+ * L - line_dy (the world keeps L - line_dy). Needs the pre-line callback. */
+extern int virtuappu_mode1_ui_map_active;
+extern int16_t virtuappu_mode1_ui_map[];
 extern virtuappu_mode1_pre_line_fn virtuappu_mode1_pre_line_callback;
 
 /* PORT_WIDESCREEN_SPIKE: MODE1_GBA_WIDTH made overridable via

@@ -46,6 +46,7 @@
 #include "structs/str_ground_bg.h"
 #include "code_809D148.h"
 #include "text_1.h"
+#include "window_buffer.h"
 #include "world_map.h"
 #include "friend_areas_map.h"
 
@@ -477,10 +478,223 @@ void Port_ViewAfterRender(void)
 
 /* Called after the game's VBlank handler: the registers and OAM it has just
  * written are what the next rendered frame shows. */
+/* ------------------------------------------------------------ docked UI
+ * The GBA screen's UI sits in the frame's centre (sUiDy). A block of text
+ * boxes at the GBA screen's bottom (dialogue, dungeon messages, item info
+ * with the portrait or Yes/No menu above it) is moved down to the frame's
+ * bottom edge instead; optionally a small block at the top (dungeon status
+ * line) to the top edge. The renderer takes BG0/BG1 and WIN0 of such lines
+ * from the GBA line given by virtuappu_mode1_ui_map; UI sprites in a block
+ * move with it. Host: PMD_DOCK=0 off, 1 bottom (default), 3 bottom + top. */
+static uint16_t sWin0h[PORT_GBA_H]; /* WIN0H per GBA line (text boxes), latched at VBlank */
+static int sWinOn;
+static int sDockTop = PORT_GBA_H, sDockEnd; /* this frame's blocks: [sDockTop, 160) and [0, sDockEnd) */
+#define DOCK_GAP 16     /* empty lines that end a block (portrait above its box: ~12) */
+#define DOCK_BOTTOM 150 /* a bottom block reaches at least this line */
+#define DOCK_MIN_TOP 40 /* ... and starts no higher (bigger menus stay) */
+#define DOCK_TOP_MAX 48 /* a top block ends above this line */
+#define DOCK_STEP 8     /* px per frame when the shift changes under a block */
+static int sDockShift, sDockHad; /* current bottom shift; a bottom block was there last frame */
+
+static int DockMode(void)
+{
+#ifndef __vita__
+    static int mode = -1;
+    if (mode < 0)
+        mode = getenv("PMD_DOCK") ? atoi(getenv("PMD_DOCK")) : 1;
+    return mode;
+#else
+    return 1;
+#endif
+}
+
+/* GBA line range [y0, y1) of OAM slot i (base-resolved like the renderer). */
+static int SlotLines(int slot, int *y0, int *y1)
+{
+    uint16_t a0, a1;
+    int h;
+    memcpy(&a0, gHostOam + slot * 8, 2);
+    memcpy(&a1, gHostOam + slot * 8 + 2, 2);
+    if ((a0 & 0x0300) == 0x0200)
+        return 0;
+    h = ObjHeight(a0, a1);
+    if (a0 & 0x0200)
+        h *= 2;
+    *y0 = sSlotY[slot] + (((int)(a0 & 0xFF) - sSlotY[slot] + 128) & 255) - 128;
+    *y1 = *y0 + h;
+    return 1;
+}
+
+/* A screen UI sprite that may move with a docked block (in a dungeon, world
+ * sprites also come through AddSprite: only priority 0 counts there). */
+static int DockSprite(int slot)
+{
+    uint16_t a2;
+    if (!virtuappu_mode1_obj_staged[slot] || !sSlotUi[slot] || virtuappu_mode1_obj_dy[slot] == 0x3000)
+        return 0;
+    memcpy(&a2, gHostOam + slot * 8 + 4, 2);
+    return sSceneLatched != PORT_SCENE_DUNGEON || ((a2 >> 10) & 3) == 0;
+}
+
+/* Lines of the GBA screen with UI: a text box (WIN0), BG0 pixels (text,
+ * borders, portraits) or a UI sprite. 0 = BG0 layout not understood. */
+static int UiLines(unsigned char ui[PORT_GBA_H])
+{
+    uint16_t dispcnt = IO16(0), cnt = IO16(0x08);
+    int hofs = IO16(0x10) & 0x1FF, vofs = IO16(0x12) & 0x1FF;
+    const uint8_t *chars = gHostVram + ((cnt >> 2) & 3) * 0x4000;
+    const uint16_t *map = (const uint16_t *)(gHostVram + ((cnt >> 8) & 31) * 0x800);
+    int s, c, i;
+
+    if ((cnt & 0xC080) != 0)
+        return 0; /* 8bpp or a big map: not the text canvas */
+    for (s = 0; s < PORT_GBA_H; s++) {
+        uint16_t w = sWin0h[s];
+        ui[s] = (dispcnt & 0x2000) && (w >> 8) != (w & 0xFF);
+        if (ui[s] || !(dispcnt & 0x0100))
+            continue;
+        {
+            int y = (s + vofs) & 255, row = y >> 3;
+            for (c = 0; c < 31 && !ui[s]; c++) {
+                int vcol = ((hofs >> 3) + c) & 31;
+                uint16_t e = map[row * 32 + vcol];
+                int py = (e & 0x800) ? 7 - (y & 7) : (y & 7);
+                uint32_t bits;
+                if (hofs == 0 && vcol == 0)
+                    continue; /* the black edge tile, not part of the picture */
+                if (c == 30 && (hofs & 7) == 0)
+                    break;
+                memcpy(&bits, chars + (e & 0x3FF) * 32 + py * 4, 4);
+                ui[s] = bits != 0;
+            }
+        }
+    }
+    for (i = 0; i < 128; i++) {
+        int y0, y1, y;
+        if (!DockSprite(i) || !SlotLines(i, &y0, &y1))
+            continue;
+        for (y = y0 < 0 ? 0 : y0; y < y1 && y < PORT_GBA_H; y++)
+            ui[y] = 1;
+    }
+    return 1;
+}
+
+static void Dock(void)
+{
+    unsigned char ui[PORT_GBA_H];
+    int mode = DockMode(), shift = sHeight - sUiDy - PORT_GBA_H;
+    int top = PORT_GBA_H, topEnd = 0; /* bottom block [top, 160), top block [0, topEnd) */
+    int s, s0 = -1, gap, line, i;
+
+    virtuappu_mode1_ui_map_active = 0;
+    sDockTop = PORT_GBA_H;
+    sDockEnd = 0;
+    {
+        int ok = mode && sActive && sWinOn && shift > 0 && sUiDy > 0;
+        if (sSceneLatched == PORT_SCENE_DUNGEON)
+            ok = ok && gDungeon != NULL;
+        else if (sSceneLatched == PORT_SCENE_GROUND || sSceneLatched == PORT_SCENE_WORLDMAP || sSceneLatched == PORT_SCENE_FRIENDMAP)
+            ok = ok && !sPictureMap && sContentH >= sHeight; /* else the box would land on black margins */
+        else
+            ok = 0;
+        if (!ok || !UiLines(ui)) {
+            sDockHad = sDockShift = 0;
+            return;
+        }
+    }
+
+    if (mode & 1) {
+        /* while gliding back, a block that left the bottom still counts */
+        int lowest = sDockShift > 0 ? 0 : DOCK_BOTTOM;
+        for (s = PORT_GBA_H - 1; s >= lowest && !ui[s]; s--)
+            ;
+        s0 = s;
+        if (s >= lowest) {
+            int t = s;
+            for (gap = 0; s >= 0; s--) {
+                if (ui[s]) {
+                    t = s;
+                    gap = 0;
+                } else if (++gap >= DOCK_GAP) {
+                    break;
+                }
+            }
+            top = s >= 0 ? t : 0; /* 0: UI up to the top (only glides back) */
+        }
+    }
+    /* the shift: full for a bottom block, none for a big menu; a block that
+     * grows or shrinks across that limit (a menu sliding in) glides there
+     * instead of jumping, a block that just appeared takes it at once */
+    {
+        int target = top >= DOCK_MIN_TOP && s0 >= DOCK_BOTTOM ? shift : 0;
+        if (top == PORT_GBA_H)
+            sDockShift = 0;
+        else if (!sDockHad)
+            sDockShift = target;
+        else if (sDockShift < target)
+            sDockShift = sDockShift + DOCK_STEP < target ? sDockShift + DOCK_STEP : target;
+        else if (sDockShift > target)
+            sDockShift = sDockShift - DOCK_STEP > target ? sDockShift - DOCK_STEP : target;
+        sDockHad = top < PORT_GBA_H;
+        if (sDockShift == 0)
+            top = PORT_GBA_H;
+        shift = sDockShift;
+    }
+    if (mode & 2) {
+        for (s = 0; s < DOCK_GAP && !ui[s]; s++)
+            ;
+        if (s < DOCK_GAP) {
+            int e = s + 1;
+            for (gap = 0; s < PORT_GBA_H; s++) {
+                if (ui[s]) {
+                    e = s + 1;
+                    gap = 0;
+                } else if (++gap >= DOCK_GAP) {
+                    break;
+                }
+            }
+            if (s < PORT_GBA_H && e <= DOCK_TOP_MAX && e < top)
+                topEnd = e;
+        }
+    }
+    if (top == PORT_GBA_H && topEnd == 0)
+        return;
+
+    for (line = 0; line < sHeight; line++) {
+        int v = line - sUiDy;
+        if (top < PORT_GBA_H && v >= top)
+            v = v - shift >= top ? v - shift : top - 1; /* the freed lines show the empty line above */
+        else if (topEnd > 0 && line < topEnd + sUiDy)
+            v = line < topEnd ? line : topEnd;
+        virtuappu_mode1_ui_map[line] = (int16_t)v;
+    }
+    virtuappu_mode1_ui_map_active = 1;
+    for (i = 0; i < 128; i++) {
+        int y0, y1;
+        if (!DockSprite(i) || !SlotLines(i, &y0, &y1))
+            continue;
+        if (top < PORT_GBA_H && y0 >= top && y0 < PORT_GBA_H)
+            virtuappu_mode1_obj_dy[i] = (int16_t)(virtuappu_mode1_obj_dy[i] + shift);
+        else if (topEnd > 0 && y1 <= topEnd && y1 > 0)
+            virtuappu_mode1_obj_dy[i] = (int16_t)(virtuappu_mode1_obj_dy[i] - sUiDy);
+    }
+    sDockTop = top;
+    sDockEnd = topEnd;
+}
+
 void Port_ViewOnVBlank(void)
 {
     int w, h, cw, ch;
     int camX = 0, camY = 0, mapW = 0, mapH = 0, wrap = 0;
+
+    /* the text boxes' window shape (WIN0H per line) the HBlank DMA armed
+     * by the VBlank handler will show in the next frame */
+    sWinOn = gDrawWindow && gWinBufferPtr != NULL;
+    if (sWinOn) {
+        int s;
+        for (s = 0; s < PORT_GBA_H; s++)
+            sWin0h[s] = (uint16_t)gWinBufferPtr[2 * s];
+    }
 
     /* A scene stays current while its frame function keeps reporting;
      * after two frames without a report (title screen, menus) the frame
@@ -843,6 +1057,7 @@ void Port_ViewBeforeRender(int *width, int *height)
         virtuappu_mode1_obj_port = 0;
         virtuappu_mode1_win_dx = virtuappu_mode1_win_dy = 0;
         virtuappu_mode1_line_dy = 0;
+        virtuappu_mode1_ui_map_active = 0;
         for (i = 0; i < 4; i++)
             virtuappu_mode1_bg_dx[i] = virtuappu_mode1_bg_dy[i] = 0;
         *width = PORT_GBA_W;
@@ -999,6 +1214,16 @@ void Port_ViewBeforeRender(int *width, int *height)
      * OAM slots, undone by Port_ViewAfterRender) */
     if (sPictureClamp)
         ExtendSpriteRows();
+    Dock();
+#ifndef __vita__
+    if (getenv("PMD_DOCK_LOG")) {
+        static int lastTop = -1, lastEnd = -1;
+        if (sDockTop != lastTop || sDockEnd != lastEnd)
+            Platform_Log("dock %u: scene %d bottom block from %d (shift %d), top block to %d\n", Port_FrameCounter(), sSceneLatched, sDockTop, sDockShift, sDockEnd);
+        lastTop = sDockTop;
+        lastEnd = sDockEnd;
+    }
+#endif
     DumpState();
 #ifndef __vita__
     {
