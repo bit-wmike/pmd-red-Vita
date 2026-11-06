@@ -140,6 +140,14 @@ Schalter: `PMD_SHOT=f1,f2` / `PMD_SHOT_EVERY=n` (PPM), `PMD_VIEW=0/1/2`, `PMD_WA
   Menücursor, Tastatur, Dungeon-Menüs). Das Original blinkt mit 8. (5) Vita-Schnellspeicherungen lassen sich auf dem Host nicht
   laden (Vita-Zeiger, andere Abschnittsgrößen). Mikes `run7/pmd_red.sav` startet morgens im Haus (Hydropi/Flemmli); Skript-
   Präfix `save_run6_letter_go.txt` bis Bild 7600 lädt ihn (Ja/Nein steht auf „Nein“, das Skript braucht ~6000 Bilder).
+  (6) **Leistung** (Agent, Callgrind: Rendern = 96 % der CPU, 20,7 → 9,4 Mio. Instr./Bild; qemu-ARM 1 Thread 9,6 → 4,8 ms):
+  Span-Compositor für Fensterzeilen (PMD hat WIN0/WIN1 + Blending in jeder Zeile), NEON bei `__ARM_NEON` (vorher nur mit
+  `TMC_VITA`!), OBJ-Zeilenlisten pro Bild, Shadow-Token-Schnellpfad, `Mode1LineCtx` statt TLS (Vita emuliert `__thread`),
+  PSG-Schritte gecacht, `FillGround` ohne Divisionen pro Spalte, `crumbs.txt` per Thread. Bilder/WAV byteidentisch.
+  Host `PMD_PROF=n`. Rest: Compositor 43 %, Shadow-Token 32 %. Fuzzer für PMD: Scratchpad `agentP/fz_pmd.c`.
+  **Offen:** `save_run6_letter_go.txt` weicht ab Bild ~14600 (Weltkarte) je nach Speicherlayout des Builds in einigen
+  Sprites ab (anderer OAM-Zustand) → vermutlich Lesen nicht initialisierten Speichers im Weltkartencode (Memcheck braucht
+  `libc6-dbg:i386`). ELFs liegen gzip-gepackt im Daten-Repo unter `builds/` (0.1.17-ELF fehlt).
 - 0.1.18 (Agent reproduzierte aus Mikes `run6/pmd_red.sav`: Brief → „Okay! Los!“ → **Weltkarte stürzt ab**,
   in 0.1.16 und 0.1.17 an verschiedenen Stellen; Skripte `platform/host/scripts/save_run6_letter_*.txt`, Spielstand
   in den Ausgabeordner kopieren). Mikes eigener Absturz kurz davor (nach „Hä? Wieso nicht?“) war auf dem Host nicht
