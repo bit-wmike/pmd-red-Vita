@@ -3,6 +3,7 @@
 #include "port/port_view.h"
 #include "port/port_comfort.h"
 #include "port/port_cheats.h"
+#include "port/port_storage.h"
 #endif
 #include "globaldata.h"
 #include "dungeon_vram.h"
@@ -178,6 +179,10 @@ static void sub_803E490(u32 unused)
     int skipWait = Port_DungeonSkipFrameWait(unused);
     if (unused == 0xF)
         Port_FloorInputFrame();
+    /* storage from the port menu: safe in the main input loop and the map
+     * view (SELECT, which may reach the game a frame before START) */
+    if (unused == 0xF || unused == 0x2F)
+        Port_StorageInputFrame();
 #endif
     sUnknown_202EDD4++;
     xxx_draw_string_80524F0();

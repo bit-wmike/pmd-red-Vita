@@ -24,6 +24,13 @@
  *   PMD_TRACE=file       per-frame checksums of the game state
  *   PMD_PANEL_LOG=n      the frame panels (clock, dungeon, floor bar, jobs) as text every n frames
  *   PMD_PANEL_TESTJOBS=n six sample jobs written into the job list at frame n (panel tests only)
+ *   PMD_STORAGE_TEST=f:op[:arg],...  Kangaskhan storage from the port menu (port/port_storage.c) at
+ *                        frame f (or the next frame in which the game waits for input): op = list,
+ *                        deposit:<bag slot>, withdraw:<item id>, give:<id>[:qty[:flags]] (test item into
+ *                        the bag, flags 0x10 set, 0x08 sticky, 0x02 shop; flags -1: stored amount),
+ *                        press:<keys hex>[:frames] (held instead of the script's keys, at an input frame),
+ *                        key:<keys>[:frames] (same at any frame); in order, "+n" = n frames after the
+ *                        previous operation; bag and storage are logged after each
  *   settings.ini, quicksave.bin, romindex.bin and textindex.bin live in the output directory.
  */
 #include <stdarg.h>
@@ -38,6 +45,7 @@
 #include "port/port_game.h"
 #include "port/port_text.h"
 #include "port/port_panel.h"
+#include "port/port_storage.h"
 
 static const char *sOutDir = "host_out";
 static int sMaxFrames = 600;
@@ -48,6 +56,82 @@ static long sWavFrames;
 static char sSavePath[1024];
 static int sQSaveAt = -1, sQLoadAt = -1;
 static int sPanelLog; /* PMD_PANEL_LOG=n: the frame panels as text every n frames */
+
+/* PMD_STORAGE_TEST: operations in order, each not before its frame ("+n":
+ * n frames after the previous one ran) */
+struct StorageOp { int frame, rel; char op[16]; int arg, arg2, arg3; int done; };
+static struct StorageOp sStorageOps[64];
+static int sStorageOpCount, sStorageNext;
+static int sKeyOverride = -1, sKeyUntil; /* press/key: keys held instead of the script's */
+
+static void ParseStorageTest(const char *e)
+{
+    while (*e && sStorageOpCount < 64) {
+        struct StorageOp *o = &sStorageOps[sStorageOpCount];
+        int n = 0;
+        memset(o, 0, sizeof(*o));
+        if (*e == '+') {
+            o->rel = 1;
+            e++;
+        }
+        if (sscanf(e, "%d:%15[a-z]%n", &o->frame, o->op, &n) < 2)
+            break;
+        e += n;
+        if (*e == ':')
+            o->arg = (int)strtol(e + 1, (char **)&e, 0);
+        if (*e == ':')
+            o->arg2 = (int)strtol(e + 1, (char **)&e, 0);
+        if (*e == ':')
+            o->arg3 = (int)strtol(e + 1, (char **)&e, 0);
+        sStorageOpCount++;
+        while (*e && *e != ',')
+            e++;
+        if (*e == ',')
+            e++;
+    }
+}
+
+static void StorageTest(int frame)
+{
+    static char text[16384];
+    struct StorageOp *o;
+    char msg[128] = "";
+    int r = 0, isKey;
+    if (sStorageNext >= sStorageOpCount || (sKeyOverride >= 0 && frame < sKeyUntil))
+        return;
+    o = &sStorageOps[sStorageNext];
+    if (frame < o->frame)
+        return;
+    isKey = !strcmp(o->op, "key");
+    /* everything but "key" waits for a frame in which the game waits for input */
+    if (!isKey && !Port_StorageSafe()) {
+        if (frame - o->frame > 3000) {
+            Platform_Log("[storage] frame %d: %s gave up (the game never waited for input)\n", frame, o->op);
+            o->done = 1;
+            sStorageNext++;
+        }
+        return;
+    }
+    o->done = 1;
+    sStorageNext++;
+    if (sStorageNext < sStorageOpCount && sStorageOps[sStorageNext].rel)
+        sStorageOps[sStorageNext].frame += frame;
+    if (isKey || !strcmp(o->op, "press")) {
+        sKeyOverride = o->arg;
+        sKeyUntil = frame + (o->arg2 > 0 ? o->arg2 : 4);
+        Platform_Log("[storage] frame %d: %s %x for %d frames\n", frame, o->op, o->arg, sKeyUntil - frame);
+        return;
+    }
+    if (!strcmp(o->op, "deposit"))
+        r = Port_StorageDeposit(o->arg, msg, sizeof(msg));
+    else if (!strcmp(o->op, "withdraw"))
+        r = Port_StorageWithdraw(o->arg, msg, sizeof(msg));
+    else if (!strcmp(o->op, "give"))
+        r = Port_StorageTestGive(o->arg, o->arg2, o->arg3);
+    Platform_Log("[storage] frame %d (asked %d): %s %d -> %d \"%s\"\n", frame, o->frame, o->op, o->arg, r, msg);
+    Port_StorageText(text, sizeof(text));
+    Platform_Log("%s", text);
+}
 
 struct InputEvent { int frame; unsigned keys; };
 static struct InputEvent sInput[8192];
@@ -135,9 +219,17 @@ uint16_t Platform_PollKeys(void)
         Port_PanelText(text, sizeof(text));
         Platform_Log("[panel] frame %d\n%s", frame, text);
     }
+    if (sStorageOpCount)
+        StorageTest(frame);
     for (i = 0; i < sInputCount; i++)
         if (frame >= sInput[i].frame)
             keys = (uint16_t)sInput[i].keys;
+    if (sKeyOverride >= 0) {
+        if (frame < sKeyUntil)
+            return (uint16_t)sKeyOverride;
+        if (frame < sKeyUntil + 2)
+            return 0; /* released between two presses */
+    }
     return keys;
 }
 
@@ -337,6 +429,8 @@ int main(int argc, char **argv)
                 buf[i] = '\n';
         Port_ConfigParse(buf);
     }
+    if ((e = getenv("PMD_STORAGE_TEST")) != NULL)
+        ParseStorageTest(e);
     if ((e = getenv("PMD_PANEL_LOG")) != NULL && atoi(e) > 0) {
         sPanelLog = atoi(e);
         Port_PanelEnable(1);

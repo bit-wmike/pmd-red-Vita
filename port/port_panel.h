@@ -69,6 +69,15 @@ struct PortPanel {
     int jobsHere;           /* active jobs in this dungeon */
     struct PortPanelJob jobs[PORT_PANEL_JOBS];
     unsigned char floorMarks[PORT_PANEL_FLOORS + 1]; /* index = floor; [0] = item to find (any floor) */
+    /* items (also outside dungeons) */
+    int setItem;            /* the item set for throwing (L+R, ITEM_FLAG_SET in the bag); 0 = none */
+    int setCount;           /* of that item in the bag: stack sizes summed (thrown items) or slots */
+    int setSticky;
+    char setName[40];
+    int heldItem;           /* the leader's held item; 0 = none */
+    int heldCount;          /* stack size of a held thrown item, 0 otherwise */
+    int heldSticky;
+    char heldName[40];
 };
 
 /* Platform: 1 = keep the data current (panels shown, logging). */
@@ -81,6 +90,8 @@ void Port_PanelRefresh(void);
 const struct PortPanel *Port_PanelGet(void);
 /* The panel as plain text (the host's PMD_PANEL_LOG); returns the length. */
 int Port_PanelText(char *buf, int size);
+/* An item's name as UTF-8 (Port_Text, the European ROM's language); "" for none. */
+void Port_PanelItemName(char *out, int size, int item);
 /* Time of day (PMD_CLOCK=HH:MM fixes it on the host). */
 void Port_PanelTimeOfDay(int *hour, int *minute);
 

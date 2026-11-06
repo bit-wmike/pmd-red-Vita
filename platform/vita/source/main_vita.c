@@ -41,6 +41,7 @@
 #include "port/port_config.h"
 #include "port/port_game.h"
 #include "port/port_panel.h"
+#include "port/port_storage.h"
 #include "cpu/mode1.h"
 
 #define DATA_DIR "ux0:data/pmd"
@@ -301,6 +302,8 @@ static void WaitDue(void)
  * left the floor bar of the dungeon with the floors of accepted jobs. The
  * data comes from port/port_panel.c (filled at VBlank on this thread). A
  * short tap on the left margin opens the job overview (RunJobOverview). */
+#define FLOOR_WINDOW 25 /* deeper dungeons: the floor bar shows 25 floors around the current one */
+#define FLOOR_MORE_H 16  /* a summary row for the floors outside that window */
 #define PANEL_MIN_W 44 /* narrower margins: no panels (smooth/sharp fill the width) */
 #define PANEL_BG RGBA8(0, 0, 0, 150)
 #define PANEL_TEXT RGBA8(235, 235, 235, 255)
@@ -372,6 +375,27 @@ static void DrawCheck(float x, float y, float s, unsigned color)
     }
 }
 
+/* An item block of the right panel: label, the name in up to two lines
+ * (scaled down when a word is too long), the count; returns the next y. */
+static int DrawItemBlock(float x, float w, int y, const char *label, int item, const char *name, int count,
+                         int sticky)
+{
+    char buf[16];
+    PanelText(x, w, y, PANEL_DIM, 0.6f, label);
+    y += 16;
+    if (!item) {
+        PanelText(x, w, y, PANEL_DIM, 0.7f, "-");
+        return y + 22;
+    }
+    y = PanelWrap(x, w, y, sticky ? PANEL_OPEN : PANEL_TEXT, 0.55f, 13, name, 2);
+    if (count > 0) {
+        snprintf(buf, sizeof(buf), "x%d", count);
+        PanelText(x, w, y + 2, PANEL_ITEM, 0.75f, buf);
+        y += 18;
+    }
+    return y + 10;
+}
+
 static void DrawRightPanel(const struct PortPanel *p, float x, float w)
 {
     char buf[48];
@@ -404,6 +428,14 @@ static void DrawRightPanel(const struct PortPanel *p, float x, float w)
     } else {
         y += 8;
     }
+    /* the item set for L+R (Square) with what is left of it in the bag, and
+     * the leader's held item (Mike: in the right frame, above the bag) */
+    vita2d_draw_rectangle(x + 4, y - 10, w - 8, 1, PANEL_DIM);
+    y += 8;
+    y = DrawItemBlock(x, w, y, "Werfen", p->setItem, p->setName, p->setCount, p->setSticky);
+    y = DrawItemBlock(x, w, y, "Gehalten", p->heldItem, p->heldName, p->heldCount, p->heldSticky);
+    vita2d_draw_rectangle(x + 4, y - 10, w - 8, 1, PANEL_DIM);
+    y += 8;
     /* the bag instead of the money (Mike: the bag is what needs managing) */
     PanelText(x, w, y, PANEL_DIM, 0.6f, "Beutel");
     y += 17;
@@ -412,11 +444,31 @@ static void DrawRightPanel(const struct PortPanel *p, float x, float w)
               0.8f, buf);
 }
 
+/* The marks of floors first..last (hidden by the floor window) as one
+ * summary row: an orange dot when a job there is open, else a tick when one
+ * is done, the range as text. */
+static void DrawHiddenFloors(const struct PortPanel *p, float x, float w, float y, int first, int last)
+{
+    char buf[16];
+    int f, open = 0, done = 0;
+    for (f = first; f <= last; f++) {
+        open |= p->floorMarks[f] & PORT_FLOOR_OPEN;
+        done |= p->floorMarks[f] & PORT_FLOOR_DONE;
+    }
+    snprintf(buf, sizeof(buf), first == last ? "%d" : "%d-%d", first, last);
+    vita2d_draw_rectangle(x + 4, y, w - 8, FLOOR_MORE_H - 2, RGBA8(30, 30, 38, 200));
+    vita2d_pgf_draw_text(sFont, (int)x + 7, (int)y + 11, PANEL_DIM, 0.45f, buf);
+    if (open)
+        vita2d_draw_fill_circle(x + w - 9, y + (FLOOR_MORE_H - 2) / 2.0f, 4, PANEL_OPEN);
+    else if (done)
+        DrawCheck(x + w - 14, y + 1, 10, PANEL_DONE);
+}
+
 static void DrawFloorBar(const struct PortPanel *p, float x, float w)
 {
     char buf[16];
-    int n = p->floorCount, f, top = 46, bottom = 482;
-    float rowH, avail = (float)(bottom - top);
+    int n = p->floorCount, f, top = 46, bottom = 482, first, last, cur = p->floor;
+    float rowH, avail;
     PanelText(x, w, 30, PANEL_HEAD, 0.6f, "Etagen");
     if (p->floorMarks[0]) {
         /* an item to find: anywhere in the dungeon */
@@ -430,22 +482,59 @@ static void DrawFloorBar(const struct PortPanel *p, float x, float w)
             vita2d_draw_fill_circle(x + w - 9, 518 - 27, 3, RGBA8(20, 20, 20, 255));
         }
     }
+    if (n > PORT_PANEL_FLOORS)
+        n = PORT_PANEL_FLOORS;
     if (n < 1)
         return;
-    rowH = avail / n;
+    if (cur > n)
+        cur = n;
+    /* deep dungeons (Mike: up to 99 floors): a window of FLOOR_WINDOW floors
+     * around the current one, the floors above and below as summary rows */
+    first = 1;
+    last = n;
+    if (n > FLOOR_WINDOW) {
+        first = (cur < 1 ? 1 : cur) - FLOOR_WINDOW / 2;
+        if (first < 1)
+            first = 1;
+        if (first > n - FLOOR_WINDOW + 1)
+            first = n - FLOOR_WINDOW + 1;
+        last = first + FLOOR_WINDOW - 1;
+    }
+    {
+        /* the summary rows go where those floors would be: above the bar for
+         * the floors nearer the entrance (going down), below for deeper ones */
+        int nearLo = first > 1, nearHi = last < n;
+        int topRow = p->stairsUp ? nearHi : nearLo, bottomRow = p->stairsUp ? nearLo : nearHi;
+        if (topRow) {
+            if (p->stairsUp)
+                DrawHiddenFloors(p, x, w, (float)top, last + 1, n);
+            else
+                DrawHiddenFloors(p, x, w, (float)top, 1, first - 1);
+            top += FLOOR_MORE_H;
+        }
+        if (bottomRow) {
+            bottom -= FLOOR_MORE_H;
+            if (p->stairsUp)
+                DrawHiddenFloors(p, x, w, (float)bottom + 1, 1, first - 1);
+            else
+                DrawHiddenFloors(p, x, w, (float)bottom + 1, last + 1, n);
+        }
+    }
+    avail = (float)(bottom - top);
+    rowH = avail / (last - first + 1);
     if (rowH > 36)
         rowH = 36;
-    for (f = 1; f <= n; f++) {
+    for (f = first; f <= last; f++) {
         /* deeper is lower: floor 1 at the top going down, at the bottom going up */
-        int slot = p->stairsUp ? n - f : f - 1;
+        int slot = p->stairsUp ? last - f : f - first;
         float ry = top + slot * rowH, rh = rowH > 3 ? rowH - 1 : rowH;
-        unsigned fill = f == p->floor ? RGBA8(250, 200, 70, 230) : f < p->floor ? RGBA8(90, 90, 100, 200) : RGBA8(45, 45, 55, 200);
+        unsigned fill = f == cur ? RGBA8(250, 200, 70, 230) : f < cur ? RGBA8(90, 90, 100, 200) : RGBA8(45, 45, 55, 200);
         float mx = x + w - 13;
         vita2d_draw_rectangle(x + 4, ry, w - 8, rh, fill);
-        if (rowH >= 11 && (n <= 30 || f == 1 || f == p->floor || f % 5 == 0)) {
+        if (rowH >= 11 && (last - first < 30 || f == 1 || f == cur || f % 5 == 0)) {
             snprintf(buf, sizeof(buf), "%d", f);
             vita2d_pgf_draw_text(sFont, (int)x + 7, (int)(ry + rh / 2 + 5 * (rowH >= 16 ? 1.0f : 0.7f)),
-                                 f == p->floor ? RGBA8(20, 20, 20, 255) : PANEL_TEXT, rowH >= 16 ? 0.62f : 0.45f, buf);
+                                 f == cur ? RGBA8(20, 20, 20, 255) : PANEL_TEXT, rowH >= 16 ? 0.62f : 0.45f, buf);
         }
         if (p->floorMarks[f] & PORT_FLOOR_OPEN) {
             if (rowH >= 8)
@@ -466,8 +555,8 @@ static void DrawFloorBar(const struct PortPanel *p, float x, float w)
         }
     }
     /* the current floor: a marker beside the bar */
-    if (p->floor >= 1 && p->floor <= n) {
-        int slot = p->stairsUp ? n - p->floor : p->floor - 1;
+    if (cur >= first && cur <= last) {
+        int slot = p->stairsUp ? last - cur : cur - first;
         float cy = top + slot * rowH + (rowH - 1) / 2;
         vita2d_draw_rectangle(x, cy - 3, 3, 6, RGBA8(250, 200, 70, 255));
     }
@@ -766,7 +855,7 @@ enum {
     MI_H_DISPLAY, MI_STYLE, MI_FRAME, MI_FPS, MI_LANG,
     MI_H_CONTROLS, MI_SQUARE, MI_TRIANGLE, MI_RSTICK, MI_TURBO,
     MI_H_COMFORT, MI_TEXT_INSTANT, MI_TEXT_AUTO, MI_BLINK, MI_MSGFAST, MI_DSPEED, MI_WALK, MI_AUTOSAVE, MI_BASESAVE,
-    MI_HPBARS, MI_CLOCK, MI_PANELS, MI_MAPOVL,
+    MI_HPBARS, MI_CLOCK, MI_PANELS, MI_MAPOVL, MI_STORAGE,
     MI_H_SAVE, MI_SLOT, MI_QSAVE, MI_QLOAD,
     MI_H_CHEATS, MI_CH_EXP, MI_CH_MONEY, MI_CH_IQ, MI_CH_RECRUIT, MI_CH_STAIRS, MI_CH_HUNGER, MI_CH_BELLY,
     MI_CH_TRAPS, MI_CH_PP, MI_CH_BUY, MI_CH_SELL, MI_CH_REVEAL,
@@ -830,6 +919,7 @@ static void MenuLine(int item, char *buf, size_t size)
         case MI_BASESAVE: snprintf(buf, size, "Schnellspeichern beim Betreten der Basis: %s", OnOff(gPortConfig.baseAutosave)); break;
         case MI_PANELS: snprintf(buf, size, "Anzeigen im Rahmen (Uhr, Status, Etagen, Missionen): %s", OnOff(gPortConfig.sidePanels)); break;
         case MI_MAPOVL: snprintf(buf, size, "Karte halbtransparent ueber dem Dungeon: %s", OnOff(gPortConfig.mapOverlay)); break;
+        case MI_STORAGE: snprintf(buf, size, "Kangama-Lager (Beutel <-> Lager, auch im Dungeon)"); break;
         case MI_SLOT: snprintf(buf, size, "Schnellspeicher-Platz: %d", gPortConfig.saveSlot); break;
         case MI_CH_BELLY: snprintf(buf, size, "Bauch sinkt halb so schnell: %s", OnOff(gPortConfig.bellySlow)); break;
         case MI_CH_TRAPS: snprintf(buf, size, "Fallen von Anfang an sichtbar: %s", OnOff(gPortConfig.trapsVisible)); break;
@@ -934,6 +1024,8 @@ static int NextItem(int sel, int d)
     return sel;
 }
 
+static void RunStorage(void);
+
 static void RunMenu(void)
 {
     static int sel = MI_STYLE, top;
@@ -954,6 +1046,13 @@ static void RunMenu(void)
         if (pressed & SCE_CTRL_DOWN) sel = NextItem(sel, 1);
         if (pressed & SCE_CTRL_LEFT) close = MenuChange(sel, -1);
         if (pressed & SCE_CTRL_RIGHT) close = MenuChange(sel, 1);
+        if ((pressed & SCE_CTRL_CROSS) && sel == MI_STORAGE) {
+            /* a page of its own; back in the menu, the buttons it was left
+             * with count as held until released */
+            RunStorage();
+            prev = ~0u;
+            continue;
+        }
         if (pressed & SCE_CTRL_CROSS) close = MenuChange(sel, 0) || close;
         if (pressed & (SCE_CTRL_CIRCLE | SCE_CTRL_START))
             close = 1;
@@ -1101,6 +1200,168 @@ static void RunJobOverview(void)
     }
     Platform_Log("[ui] job overview closed\n");
     sAnchored = 0; /* the overview stalled the game: re-anchor the pacing */
+    sWdPause = 0;
+}
+
+/* ---- Kangaskhan storage (port menu, "Kangama-Lager") ---- */
+
+#define ST_ROWS 18
+#define ST_ROW_H 21
+#define ST_TOP 112
+
+static const char *StorageTag(int refuse)
+{
+    switch (refuse) {
+        case PORT_STORAGE_ERR_SHOP: return "Laden";
+        case PORT_STORAGE_ERR_STICKY: return "klebrig";
+        case PORT_STORAGE_ERR_MONEY: return "nicht lagerbar";
+        case PORT_STORAGE_ERR_FULL: return "Lager voll";
+        default: return "";
+    }
+}
+
+/* One column: entries top..top+ST_ROWS, the selection marked. */
+static void DrawStorageColumn(const struct PortStorageEntry *e, int count, int isBag, int sel, int top, int active,
+                              float x, float w)
+{
+    char buf[24];
+    int i;
+    for (i = 0; i < ST_ROWS && top + i < count; i++) {
+        const struct PortStorageEntry *it = &e[top + i];
+        int y = ST_TOP + i * ST_ROW_H, tagW = 0;
+        int ok = it->refuse == PORT_STORAGE_OK;
+        unsigned col = ok ? PANEL_TEXT : PANEL_DIM;
+        if (top + i == sel) {
+            vita2d_draw_rectangle(x - 6, y - 16, w + 12, ST_ROW_H - 1, active ? RGBA8(90, 70, 20, 230) : RGBA8(50, 50, 60, 200));
+            if (active)
+                vita2d_pgf_draw_text(sFont, (int)x - 4, y, PANEL_HEAD, 0.85f, ">");
+        }
+        if (isBag && it->set)
+            vita2d_pgf_draw_text(sFont, (int)x + 12, y, PANEL_ITEM, 0.6f, "L+R");
+        vita2d_pgf_draw_text(sFont, (int)x + (isBag ? 46 : 12), y, col, 0.85f, it->name);
+        if (!ok && isBag) {
+            const char *tag = StorageTag(it->refuse);
+            tagW = vita2d_pgf_text_width(sFont, 0.6f, tag);
+            vita2d_pgf_draw_text(sFont, (int)(x + w - tagW), y, PANEL_OPEN, 0.6f, tag);
+            tagW += 10;
+        }
+        if (!isBag || it->thrown) {
+            int tw;
+            snprintf(buf, sizeof(buf), isBag ? "x%d" : "%d", it->count);
+            tw = vita2d_pgf_text_width(sFont, 0.85f, buf);
+            vita2d_pgf_draw_text(sFont, (int)(x + w - tagW - tw), y, isBag ? PANEL_ITEM : col, 0.85f, buf);
+        }
+    }
+    if (top > 0)
+        vita2d_pgf_draw_text(sFont, (int)(x + w / 2), ST_TOP - 22, PANEL_DIM, 0.8f, "^");
+    if (top + ST_ROWS < count)
+        vita2d_pgf_draw_text(sFont, (int)(x + w / 2), ST_TOP + ST_ROWS * ST_ROW_H - 6, PANEL_DIM, 0.8f, "v");
+}
+
+static int ClampSel(int sel, int count)
+{
+    return sel >= count ? count - 1 : sel < 0 ? 0 : sel;
+}
+
+/* Bag (left) and Kangaskhan's storage (right) over the paused game; X or O
+ * moves the selected item to the other side (port/port_storage.c: the
+ * town's rules), Triangle/START closes. Works anywhere, as long as the game
+ * waits for the player with no menu of its own open. */
+static void RunStorage(void)
+{
+    static struct PortStorageView v;
+    int col = 0, sel[2] = {0, 0}, top[2] = {0, 0}, held = 0, moves = 0;
+    unsigned prev = ~0u, msgColor = PANEL_DIM;
+    char msg[160] = "", line[160];
+
+    Port_StorageList(&v);
+    Platform_Log("[ui] storage open (bag %d, storage %d kinds, safe %d)\n", v.bagCount, v.storeCount, v.safe);
+    if (v.valid && (v.noBag || !v.safe)) {
+        snprintf(msg, sizeof(msg), "%s", Port_StorageReason(v.noBag ? PORT_STORAGE_ERR_NOBAG : PORT_STORAGE_ERR_STATE));
+        msgColor = PANEL_OPEN;
+    }
+    sWdPause = 1;
+    for (;;) {
+        SceCtrlData pad;
+        unsigned pressed, rep;
+        int close = 0, i, count[2];
+
+        sceCtrlPeekBufferPositive(0, &pad, 1);
+        pressed = pad.buttons & ~prev;
+        prev = pad.buttons;
+        /* up/down repeat while held */
+        rep = pad.buttons & (SCE_CTRL_UP | SCE_CTRL_DOWN);
+        if (rep && !(pressed & rep)) {
+            if (++held > 20 && held % 4 == 0)
+                pressed |= rep;
+        } else {
+            held = 0;
+        }
+        count[0] = v.bagCount;
+        count[1] = v.storeCount;
+        if (pressed & (SCE_CTRL_TRIANGLE | SCE_CTRL_START | SCE_CTRL_SELECT))
+            close = 1;
+        if (pressed & SCE_CTRL_LEFT) col = 0;
+        if (pressed & SCE_CTRL_RIGHT) col = 1;
+        if (count[col] > 0) {
+            if (pressed & SCE_CTRL_UP) sel[col] = (sel[col] + count[col] - 1) % count[col];
+            if (pressed & SCE_CTRL_DOWN) sel[col] = (sel[col] + 1) % count[col];
+            if (pressed & SCE_CTRL_LTRIGGER) sel[col] = ClampSel(sel[col] - ST_ROWS, count[col]);
+            if (pressed & SCE_CTRL_RTRIGGER) sel[col] = ClampSel(sel[col] + ST_ROWS, count[col]);
+        }
+        if ((pressed & (SCE_CTRL_CROSS | SCE_CTRL_CIRCLE)) && count[col] > 0) {
+            int r = col == 0 ? Port_StorageDeposit(v.bag[sel[col]].slot, msg, sizeof(msg))
+                             : Port_StorageWithdraw(v.store[sel[col]].id, msg, sizeof(msg));
+            msgColor = r == PORT_STORAGE_OK ? PANEL_DONE : PANEL_OPEN;
+            if (r == PORT_STORAGE_OK)
+                moves++;
+            Port_StorageList(&v);
+            count[0] = v.bagCount;
+            count[1] = v.storeCount;
+        }
+        for (i = 0; i < 2; i++) {
+            sel[i] = ClampSel(sel[i], count[i]);
+            if (sel[i] < top[i])
+                top[i] = sel[i];
+            if (sel[i] >= top[i] + ST_ROWS)
+                top[i] = sel[i] - ST_ROWS + 1;
+            if (top[i] < 0)
+                top[i] = 0;
+        }
+
+        vita2d_pool_reset();
+        DrawGame();
+        vita2d_draw_rectangle(0, 0, 960, 544, RGBA8(0, 0, 0, 215));
+        vita2d_pgf_draw_text(sFont, 40, 44, PANEL_HEAD, 1.2f, "Kangama-Lager");
+        if (!v.valid) {
+            vita2d_pgf_draw_text(sFont, 60, 110, PANEL_TEXT, 1.0f, "Kein Spielstand geladen.");
+        } else {
+            snprintf(line, sizeof(line), "Beutel %d/%d", v.bagCount, PORT_STORAGE_BAG);
+            vita2d_pgf_draw_text(sFont, 40, 84, col == 0 ? PANEL_HEAD : PANEL_TEXT, 0.95f, line);
+            snprintf(line, sizeof(line), "Lager (%d %s)", v.storeCount, v.storeCount == 1 ? "Sorte" : "Sorten");
+            vita2d_pgf_draw_text(sFont, 500, 84, col == 1 ? PANEL_HEAD : PANEL_TEXT, 0.95f, line);
+            vita2d_draw_rectangle(40, 92, 420, 1, PANEL_DIM);
+            vita2d_draw_rectangle(500, 92, 420, 1, PANEL_DIM);
+            if (v.bagCount == 0)
+                vita2d_pgf_draw_text(sFont, 52, ST_TOP, PANEL_DIM, 0.85f, "(leer)");
+            if (v.storeCount == 0)
+                vita2d_pgf_draw_text(sFont, 512, ST_TOP, PANEL_DIM, 0.85f, "(leer)");
+            DrawStorageColumn(v.bag, v.bagCount, 1, sel[0], top[0], col == 0, 40, 420);
+            DrawStorageColumn(v.store, v.storeCount, 0, sel[1], top[1], col == 1, 500, 420);
+        }
+        if (msg[0])
+            vita2d_pgf_draw_text(sFont, 40, 502, msgColor, 0.85f, msg);
+        vita2d_pgf_draw_text(sFont, 40, 528, PANEL_DIM, 0.8f,
+                             "Steuerkreuz: w\xc3\xa4hlen, links/rechts: Beutel/Lager   X/O: umlagern   L/R: bl\xc3\xa4ttern   Dreieck/START: zur\xc3\xbc" "ck");
+        vita2d_end_drawing();
+        vita2d_wait_rendering_done();
+        vita2d_swap_buffers();
+        sceDisplayWaitVblankStart();
+        if (close)
+            break;
+    }
+    Platform_Log("[ui] storage closed (%d moved, bag %d)\n", moves, v.bagCount);
+    sAnchored = 0; /* the page stalled the game: re-anchor the pacing */
     sWdPause = 0;
 }
 

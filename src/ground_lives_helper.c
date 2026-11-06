@@ -11,6 +11,7 @@
 #include "unk_ds_only_feature.h"
 #ifdef PORT
 #include "port/port_comfort.h"
+#include "port/port_storage.h"
 #endif
 
 void nullsub_117(void)
@@ -97,6 +98,7 @@ u32 sub_809CDC8(struct GroundLives_Sub120 *strPtr, u32 *r6, s8 *direction, s32 *
             u16 pressed = gRealInputs.pressed;
 #ifdef PORT
             Port_GroundInputFrame(GetGroundMapID()); /* base autosave, port/port_comfort.c */
+            Port_StorageInputFrame(); /* storage from the port menu: safe now */
 #endif
             if (held & DPAD_ANY) {
 #ifdef PORT

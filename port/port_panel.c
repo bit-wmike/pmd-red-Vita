@@ -206,6 +206,11 @@ static void ItemName(char *out, int size, int item)
     GameToUtf8(out, size, gItemParametersData[item].name);
 }
 
+void Port_PanelItemName(char *out, int size, int item)
+{
+    ItemName(out, size, item);
+}
+
 static void DungeonName(char *out, int size, int dungeon)
 {
     if (dungeon < 0 || dungeon >= NUM_DUNGEONS) {
@@ -260,6 +265,52 @@ static EntityInfo *Leader(void)
             return GetEntInfo(e);
     }
     return NULL;
+}
+
+/* The item set for throwing (L+R) and the leader's held item: in a dungeon
+ * the leader's entity, elsewhere the leader in the recruited list. */
+static void FillItems(struct PortPanel *p)
+{
+    int i;
+    if (gTeamInventoryRef != NULL) {
+        for (i = 0; i < INVENTORY_SIZE; i++) {
+            const Item *it = &gTeamInventoryRef->teamItems[i];
+            if ((it->flags & ITEM_FLAG_EXISTS) && (it->flags & ITEM_FLAG_SET) && it->id != ITEM_NOTHING &&
+                it->id < NUMBER_OF_ITEM_IDS) {
+                p->setItem = it->id;
+                p->setSticky = (it->flags & ITEM_FLAG_STICKY) != 0;
+                break;
+            }
+        }
+        if (p->setItem) {
+            int thrown = IsThrownItem((u8)p->setItem);
+            for (i = 0; i < INVENTORY_SIZE; i++) {
+                const Item *it = &gTeamInventoryRef->teamItems[i];
+                if ((it->flags & ITEM_FLAG_EXISTS) && it->id == p->setItem)
+                    p->setCount += thrown ? it->quantity : 1;
+            }
+            ItemName(p->setName, sizeof(p->setName), p->setItem);
+        }
+    }
+    if (p->inDungeon) {
+        EntityInfo *leader = Leader();
+        if (leader != NULL && (leader->heldItem.flags & ITEM_FLAG_EXISTS) && leader->heldItem.id != ITEM_NOTHING &&
+            leader->heldItem.id < NUMBER_OF_ITEM_IDS) {
+            p->heldItem = leader->heldItem.id;
+            p->heldSticky = (leader->heldItem.flags & ITEM_FLAG_STICKY) != 0;
+            if (IsThrownItem(leader->heldItem.id))
+                p->heldCount = leader->heldItem.quantity;
+        }
+    } else if (gRecruitedPokemonRef != NULL) {
+        Pokemon *leader = GetLeaderMon1();
+        if (leader != NULL && leader->heldItem.id != ITEM_NOTHING && leader->heldItem.id < NUMBER_OF_ITEM_IDS) {
+            p->heldItem = leader->heldItem.id;
+            if (IsThrownItem(leader->heldItem.id))
+                p->heldCount = leader->heldItem.quantity;
+        }
+    }
+    if (p->heldItem)
+        ItemName(p->heldName, sizeof(p->heldName), p->heldItem);
 }
 
 static void FillJob(struct PortPanelJob *j, const WonderMail *m, int curDungeon)
@@ -330,6 +381,10 @@ static void FillJob(struct PortPanelJob *j, const WonderMail *m, int curDungeon)
     }
 }
 
+#ifndef __vita__
+static void FakeFloors(struct PortPanel *p);
+#endif
+
 static void Fill(void)
 {
     struct PortPanel *p = &sPanel;
@@ -377,6 +432,8 @@ static void Fill(void)
         }
     }
 
+    FillItems(p);
+
     if (gUnknown_203B490 != NULL) {
         for (i = 0; i < MAX_ACCEPTED_JOBS && p->jobCount < PORT_PANEL_JOBS; i++) {
             const WonderMail *m = &gUnknown_203B490->jobSlots[i];
@@ -403,7 +460,38 @@ static void Fill(void)
             }
         }
     }
+#ifndef __vita__
+    FakeFloors(p);
+#endif
 }
+
+#ifndef __vita__
+/* Host test only: PMD_PANEL_FAKEFLOORS=floor:count[:stairsUp] pretends the
+ * dungeon has `count` floors (up to 99, deep dungeons) and the team is on
+ * `floor`; open jobs on floors 3 and count-4, done on count/2 - for checking
+ * the floor bar, not the game (the panel data only, nothing is written). */
+static void FakeFloors(struct PortPanel *p)
+{
+    static int checked, floor, count, up;
+    if (!checked) {
+        const char *e = getenv("PMD_PANEL_FAKEFLOORS");
+        checked = 1;
+        if (e == NULL || sscanf(e, "%d:%d:%d", &floor, &count, &up) < 2)
+            count = 0;
+    }
+    if (count <= 0 || !p->inDungeon)
+        return;
+    if (count > PORT_PANEL_FLOORS)
+        count = PORT_PANEL_FLOORS;
+    p->floor = floor;
+    p->floorCount = count;
+    p->stairsUp = up;
+    FloorText(p->floorText, sizeof(p->floorText), -1, floor);
+    p->floorMarks[3 <= count ? 3 : count] |= PORT_FLOOR_OPEN;
+    p->floorMarks[count > 4 ? count - 4 : count] |= PORT_FLOOR_OPEN;
+    p->floorMarks[count / 2 > 0 ? count / 2 : 1] |= PORT_FLOOR_DONE;
+}
+#endif
 
 void Port_PanelRefresh(void)
 {
@@ -474,13 +562,20 @@ int Port_PanelText(char *buf, int size)
         OUT("[panel] Dungeon %d \"%s\" %s (Etage %d von %d)  Bauch %d/%d  KP %d/%d  Wetter %s\n", p->dungeon,
             p->dungeonName, p->floorText, p->floor, p->floorCount, p->belly, p->maxBelly, p->hp, p->maxHp,
             p->weather[0] ? p->weather : "-");
-        OUT("[panel] Etagen:");
+        OUT("[panel] Etagen%s:", p->stairsUp ? " (aufw\xc3\xa4rts)" : "");
         for (f = 1; f <= p->floorCount; f++)
             OUT(" %d%s%s%s%s", f, f == p->floor ? "*" : "", (p->floorMarks[f] & PORT_FLOOR_OPEN) ? "!" : "",
                 (p->floorMarks[f] & PORT_FLOOR_DONE) ? "+" : "", (p->floorMarks[f] & PORT_FLOOR_INACTIVE) ? "?" : "");
         OUT("%s\n", (p->floorMarks[0] & PORT_FLOOR_OPEN) ? "  Item!" : (p->floorMarks[0] & PORT_FLOOR_DONE) ? "  Item+" :
             (p->floorMarks[0] & PORT_FLOOR_INACTIVE) ? "  Item?" : "");
     }
+    OUT("[panel] Werfen: %s", p->setItem ? p->setName : "-");
+    if (p->setItem)
+        OUT(" x%d%s", p->setCount, p->setSticky ? " (klebrig)" : "");
+    OUT("  Gehalten: %s", p->heldItem ? p->heldName : "-");
+    if (p->heldCount)
+        OUT(" x%d", p->heldCount);
+    OUT("%s\n", p->heldSticky ? " (klebrig)" : "");
     OUT("[panel] Jobs: %d (hier aktiv %d)\n", p->jobCount, p->jobsHere);
     for (i = 0; i < p->jobCount; i++) {
         const struct PortPanelJob *j = &p->jobs[i];
