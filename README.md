@@ -18,7 +18,7 @@ Spanish: the port looks the English strings of the US code up in the ROM and
 takes the translation that lies next to them (asked once at the first start,
 later in the port menu). At start-up the port reads graphics, maps and sounds from the
 ROM file (the first start scans it once and caches the offsets in
-`romindex.txt`).
+`romindex.bin`).
 
 ## Features
 

@@ -399,6 +399,11 @@ void CopySpritesToOam(void)
 
     // Clear remaining object slots
     while ((u32)oam > (OAM + sizeof(struct OamData))) {
+#ifdef PORT
+        /* a parked slot (0,160) is no longer the port's: drawn by GBA rules
+         * (hidden), not at the place of the sprite it held before */
+        Port_OamSlot((s32)(((u32)oam - OAM) / 8) - 1, -1);
+#endif
         // Skip affineParam
         oam -= 2;
         // Set tileNum/priority/paletteNum

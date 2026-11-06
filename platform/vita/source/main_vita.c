@@ -919,12 +919,29 @@ static unsigned char *LoadRom(size_t *outSize, int *foundAny)
         rom = (unsigned char *)malloc(PORT_ROM_SIZE);
         fd = sceIoOpen(path, SCE_O_RDONLY, 0);
         if (fd >= 0 && rom) {
-            int n = sceIoRead(fd, rom, PORT_ROM_SIZE);
+            /* in 4 MiB pieces with a progress line (the memory card reads
+             * ~10-30 MB/s: 32 MiB take seconds) */
+            uint64_t t0 = sceKernelGetProcessTimeWide(), us;
+            int n = 0, got;
+            while (n < (int)PORT_ROM_SIZE) {
+                char msg[96];
+                snprintf(msg, sizeof(msg), "ROM wird gelesen ... / reading the ROM ... %d %%", n / (int)(PORT_ROM_SIZE / 100));
+                ShowProgress(msg);
+                got = sceIoRead(fd, rom + n, (PORT_ROM_SIZE - n) < (4u << 20) ? PORT_ROM_SIZE - n : (4u << 20));
+                if (got <= 0)
+                    break;
+                n += got;
+            }
             sceIoClose(fd);
+            us = sceKernelGetProcessTimeWide() - t0;
+            /* the game code only: the SHA-1 of the whole ROM took ~4 s here
+             * (romindex.bin keeps it) */
             if (n == (int)PORT_ROM_SIZE && Port_RomVersion(rom, (size_t)n) != 0) {
                 Platform_Log("rom: using %s (game code B24%c, %s)\n", ent.d_name, Port_RomVersion(rom, (size_t)n),
-                             Port_RomMatches(rom, (size_t)n) ? "USA 1.0, the version this port is made from"
-                                                              : "another version: data is matched by content");
+                             Port_RomVersion(rom, (size_t)n) == 'E' ? "USA, the version this port is made from"
+                                                                     : "another version: data is matched by content");
+                Platform_Log("[start] rom read: %u ms (%u KB/s)\n", (unsigned)(us / 1000),
+                             (unsigned)((uint64_t)n * 1000000u / 1024u / (us ? us : 1)));
                 *outSize = (size_t)n;
                 break;
             }
@@ -979,6 +996,8 @@ int main(int argc, char **argv)
     size_t romSize = 0;
     int foundAny;
 
+    uint64_t tMain = sceKernelGetProcessTimeWide(), tPhase;
+
     (void)argc; (void)argv;
     memset(&init, 0, sizeof(init));
     memset(&boot, 0, sizeof(boot));
@@ -994,11 +1013,16 @@ int main(int argc, char **argv)
     sceIoRename(LOG_PATH, DATA_DIR "/log_prev.txt");
     sLog = fopen(LOG_PATH, "w");
     Platform_Log("Pokemon Mystery Dungeon Red Vita %s\n", PMD_PORT_VERSION);
+    /* process time: from the start of the process (loading the 37 MiB of
+     * the eboot's segments happens before main) */
+    Platform_Log("[start] main reached after %u ms\n", (unsigned)(tMain / 1000));
     CheckGthreads();
 
     sceCtrlSetSamplingMode(SCE_CTRL_MODE_ANALOG);
     sceTouchSetSamplingState(SCE_TOUCH_PORT_FRONT, SCE_TOUCH_SAMPLING_STATE_START);
+    tPhase = sceKernelGetProcessTimeWide();
     VideoInit();
+    Platform_Log("[start] video init: %u ms\n", (unsigned)((sceKernelGetProcessTimeWide() - tPhase) / 1000));
     ShowProgress("ROM wird gelesen ... / reading the ROM ...");
 
     rom = LoadRom(&romSize, &foundAny);
@@ -1012,12 +1036,16 @@ int main(int argc, char **argv)
         return 0;
     }
     ShowProgress("Spieldaten werden geladen (beim ersten Start einige Sekunden) ...\nloading the game data (a few seconds on the first start) ...");
+    tPhase = sceKernelGetProcessTimeWide();
     if (Port_LoadRom(rom, romSize) != 0) {
         ShowMessage("Fehler / Error", "Die Spieldaten konnten nicht geladen werden.\nGame data could not be loaded.");
         sceKernelExitProcess(0);
         return 0;
     }
-    if (gPortAssetsMissing || gPortAssetsPartial) {
+    Platform_Log("[start] game data: %u ms\n", (unsigned)((sceKernelGetProcessTimeWide() - tPhase) / 1000));
+    /* the note on another ROM version: only when the ROM was searched (first
+     * start), not at every start with the same ROM (it held 4 s each time) */
+    if (gPortAssetsCacheBuilt && (gPortAssetsMissing || gPortAssetsPartial)) {
         char buf[300];
         snprintf(buf, sizeof(buf),
                  "Andere ROM-Version: %u Datenbloecke nur teilweise, %u nicht gefunden (siehe log.txt).\n"
@@ -1027,14 +1055,17 @@ int main(int argc, char **argv)
         sceKernelDelayThread(4 * 1000 * 1000);
     }
 
+    tPhase = sceKernelGetProcessTimeWide();
     AudioInit();
     Port_Init(); /* loads settings.ini */
+    Platform_Log("[start] audio + settings: %u ms\n", (unsigned)((sceKernelGetProcessTimeWide() - tPhase) / 1000));
     gPortConfig.viewMode = gPortViewMode = PORT_VIEW_FULL; /* the Vita port always shows the Full View */
     Platform_Log("settings: view=%d style=%d frame=%d fps30=%d turbo=%d\n", gPortConfig.viewMode,
                  gPortConfig.displayStyle, gPortConfig.frame, gPortConfig.frameRate30, gPortConfig.turbo);
     if (Port_TextMultilingual() && gPortConfig.language < 0)
         ChooseLanguage();
     Platform_Log("settings: language=%d (multilingual ROM: %d)\n", gPortConfig.language, Port_TextMultilingual());
+    Platform_Log("[start] game starts after %u ms\n", (unsigned)(sceKernelGetProcessTimeWide() / 1000));
     Port_RunGame();
 
     sceKernelExitProcess(0);

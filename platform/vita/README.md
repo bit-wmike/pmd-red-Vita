@@ -24,7 +24,7 @@
    `file: not found in the game data: <name>`.
 3. Starten. Beim ersten Start durchsucht der Port die ROM einmal nach den
    Spieldaten (einige Sekunden) und merkt sich die Fundstellen in
-   `romindex.txt`; danach startet er sofort.
+   `romindex.bin`; danach startet er in wenigen Sekunden.
 
 Im Paket sind keine Spieldaten. Grafik, Karten, Texte und Musik kommen beim
 Start aus deiner ROM.
@@ -93,7 +93,7 @@ Update ist sie ungültig. Die normalen Spielstände bleiben davon unberührt.
 | `pmd_red.sav` | Spielstand (128 KiB Flash, mit GBA-Emulatoren kompatibel) |
 | `settings.ini` | Einstellungen |
 | `quicksave.bin` | Schnellspeicherung |
-| `romindex.txt` | Fundstellen der Spieldaten in der ROM (wird automatisch erzeugt) |
+| `romindex.bin` | Fundstellen der Spieldaten in der ROM (wird automatisch erzeugt; löschen erzwingt eine neue Suche) |
 | `log.txt`, `log_prev.txt` | Protokoll des letzten / vorletzten Starts |
 
 Bei Problemen bitte `log.txt` mitschicken. Die `[perf]`-Zeilen zeigen die
@@ -107,7 +107,7 @@ rechts=10, links=20, oben=40, unten=80, R=100, L=200); die Tasten bleiben bis
 zur nächsten Zeile gedrückt. Umgebungsvariablen: `PMD_SHOT=f1,f2` (PPM-Bilder),
 `PMD_SHOT_EVERY=n`, `PMD_VIEW=0/1/2`, `PMD_WAV=1`, `PMD_QSAVE_AT`/`PMD_QLOAD_AT`,
 `PMD_CHEATS=1`, `PMD_30FPS=1`, `PMD_TIMING=1`, `PMD_VIEW_DUMP=frame`,
-`PMD_AUDIO_DEBUG=1`. `settings.ini`, `quicksave.bin` und `romindex.txt`
+`PMD_AUDIO_DEBUG=1`. `settings.ini`, `quicksave.bin` und `romindex.bin`
 liegen im Ausgabeordner.
 
 ## Testdaten mit einem Befehl holen (Pi)

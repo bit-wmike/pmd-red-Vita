@@ -44,7 +44,7 @@ struct Entry {
 };
 
 static struct Entry *sIndex, *sSites, *sCache, *sResults;
-static unsigned char *sIndexBlob; /* textindex.bin image: header, sIndex, sSites, pools, regions */
+static unsigned char *sIndexBlob; /* one block: (unused header), sIndex, sSites */
 static int sInitDone, sEnabled, sCacheLang, sDebug;
 static int sDebugAll; /* PMD_TEXT_DEBUG=2: every translation */
 static unsigned sGroups, sTables, sPools_, sMisses, sCalls;
@@ -81,6 +81,18 @@ static int StringStart(uint32_t off)
         return 0;
     b = gHostRom[off - 1];
     return b == 0 || b == 0x08 || b == 0x09;
+}
+
+/* The text of a pool entry { u16 width; text } whose width is 256 or more:
+ * the byte before the text is the width's high byte, not a NUL (the long
+ * personality results of the quiz). */
+static int PoolText(uint32_t off)
+{
+    unsigned hi;
+    if (off < 3 || off >= gHostRomSize || (off & 1))
+        return 0;
+    hi = gHostRom[off - 1];
+    return hi >= 1 && hi <= 7 && gHostRom[off - 3] == 0 && gHostRom[off] >= 0x20;
 }
 
 /* Mostly letters: 70 % of the bytes are ASCII or Latin-1 letters. */
@@ -163,18 +175,21 @@ static void PreferEnglishStrings(void);
  *
  * File layout (little-endian, as both the Vita and the test hosts are):
  *   struct TextIndexHeader (64 bytes)
- *   sIndex   (1 << INDEX_BITS) entries of {u32 key, u32 val}
- *   sSites   (1 << SITE_BITS) entries
+ *   sIndex   bitmap of the used slots ((1 << INDEX_BITS) bits), then the
+ *            used entries {u32 key, u32 val} in slot order
+ *   sSites   likewise ((1 << SITE_BITS) bits, entries)
  *   pools    poolCount x {u32 start, end, count; i32 lang, kind}
  *   regions  regionCount x {u32 start, end, count; i32 lang}
- * Everything is a ROM offset or a count. The file is read straight into the
- * block that holds sIndex and sSites (no second copy: the Vita's heap is
- * tight). TEXT_INDEX_FORMAT must be raised whenever the builder changes
+ * Everything is a ROM offset or a count. The hash tables are only ~20 %
+ * full: stored packed, the file is ~2.4 MiB instead of 10.5 (the Vita's
+ * memory card reads ~11 MB/s, the full tables took ~0.9 s). Unpacking
+ * puts every entry back in its slot, so the tables are the same as built.
+ * TEXT_INDEX_FORMAT must be raised whenever the builder changes
  * (BuildIndex, BuildPools, BuildRegions, PreferEnglishStrings, the table
- * sizes or the string rules above). */
+ * sizes or the string rules above); TEXT_INDEX_MAGIC names the layout. */
 #define TEXT_INDEX_FILE "textindex.bin"
-#define TEXT_INDEX_MAGIC 0x58444954u /* "TIDX" */
-#define TEXT_INDEX_FORMAT 2
+#define TEXT_INDEX_MAGIC 0x43444954u /* "TIDC": packed tables (the full tables were "TIDX") */
+#define TEXT_INDEX_FORMAT 3
 #define TEXT_INDEX_HEADER 64
 
 struct TextIndexHeader {
@@ -216,12 +231,64 @@ static void Wr32(unsigned char *p, uint32_t v)
     p[3] = (unsigned char)(v >> 24);
 }
 
-/* The index of a previous run, read into sIndexBlob: 1 when it is for this
- * ROM and this builder, else 0 (and the tables are left zeroed). */
-static int LoadIndexFile(long n)
+#define INDEX_MAP_BYTES ((size_t)1 << (INDEX_BITS - 3))
+#define SITE_MAP_BYTES ((size_t)1 << (SITE_BITS - 3))
+
+static size_t IndexFileSize(uint32_t fillIndex, uint32_t fillSites, uint32_t pools, uint32_t regions)
 {
-    const unsigned char *h = sIndexBlob;
+    return TEXT_INDEX_HEADER + INDEX_MAP_BYTES + (size_t)fillIndex * 8 + SITE_MAP_BYTES + (size_t)fillSites * 8 +
+           (size_t)pools * POOL_WORDS * 4 + (size_t)regions * REGION_WORDS * 4;
+}
+
+/* Packs a hash table: bitmap of the used slots, then their entries. */
+static unsigned char *PackTable(unsigned char *p, const struct Entry *t, int bits)
+{
+    uint32_t i, slots = 1u << bits;
+    unsigned char *e = p + (slots >> 3);
+    memset(p, 0, slots >> 3);
+    for (i = 0; i < slots; i++)
+        if (t[i].val != 0) {
+            p[i >> 3] |= (unsigned char)(1u << (i & 7));
+            Wr32(e, t[i].key);
+            Wr32(e + 4, t[i].val);
+            e += 8;
+        }
+    return e;
+}
+
+/* Unpacks a table written by PackTable into the zeroed table t; `fill`
+ * entries must follow the bitmap. Returns the end of the entries, NULL
+ * when the counts disagree or an entry is empty. */
+static const unsigned char *UnpackTable(const unsigned char *p, struct Entry *t, int bits, uint32_t fill)
+{
+    uint32_t i, slots = 1u << bits, used = 0;
+    const unsigned char *e = p + (slots >> 3);
+    for (i = 0; i < slots; i += 8) {
+        unsigned b = p[i >> 3], j;
+        if (b == 0)
+            continue;
+        for (j = 0; j < 8; j++)
+            if (b & (1u << j)) {
+                if (used == fill)
+                    return NULL;
+                t[i + j].key = Rd32(e);
+                t[i + j].val = Rd32(e + 4);
+                if (t[i + j].val == 0)
+                    return NULL;
+                e += 8;
+                used++;
+            }
+    }
+    return used == fill ? e : NULL;
+}
+
+/* The index of a previous run (the file's bytes h[0..n)), unpacked into
+ * sIndex and sSites: 1 when it is for this ROM and this builder, else 0 (the
+ * tables may then hold parts of it: the caller clears them). */
+static int LoadIndexFile(const unsigned char *h, long n)
+{
     unsigned char sha[20];
+    const unsigned char *p;
     uint32_t poolCount, regionCount, total, fillIndex, fillSites;
     if (n < TEXT_INDEX_HEADER)
         return 0;
@@ -239,40 +306,40 @@ static int LoadIndexFile(long n)
     poolCount = Rd32(h + 44);
     regionCount = Rd32(h + 48);
     total = Rd32(h + 52);
+    /* at most 7/8 of the slots used (Put's limit): Get() always meets an
+     * empty slot */
     if (Rd32(h + 28) != INDEX_BITS || Rd32(h + 32) != SITE_BITS || poolCount > POOL_MAX || regionCount > REGION_MAX ||
-        fillIndex > (1u << INDEX_BITS) || fillSites > (1u << SITE_BITS) ||
-        total != TEXT_INDEX_HEADER + INDEX_BYTES + SITE_BYTES + poolCount * POOL_WORDS * 4 + regionCount * REGION_WORDS * 4 ||
-        (long)total != n) {
+        fillIndex > (1u << INDEX_BITS) / 8 * 7 || fillSites > (1u << SITE_BITS) / 8 * 7 ||
+        total != IndexFileSize(fillIndex, fillSites, poolCount, regionCount) || (long)total != n) {
         Platform_Log("text: " TEXT_INDEX_FILE " has unexpected sizes (%ld bytes)\n", n);
         return 0;
     }
-    {
-        /* the sizes say the file is complete; a damaged table could still
-         * send Get() looping, so count the used entries */
-        uint32_t i, used = 0;
-        for (i = 0; i < (1u << INDEX_BITS); i++)
-            used += sIndex[i].val != 0;
-        if (used != fillIndex)
-            return 0;
-        for (i = 0, used = 0; i < (1u << SITE_BITS); i++)
-            used += sSites[i].val != 0;
-        if (used != fillSites)
-            return 0;
+    p = UnpackTable(h + TEXT_INDEX_HEADER, sIndex, INDEX_BITS, fillIndex);
+    if (p)
+        p = UnpackTable(p, sSites, SITE_BITS, fillSites);
+    if (!p) {
+        Platform_Log("text: " TEXT_INDEX_FILE " is damaged\n");
+        return 0;
     }
     sFill[0] = fillIndex;
     sFill[1] = fillSites;
-    PoolsFromWords(sIndexBlob + TEXT_INDEX_HEADER + INDEX_BYTES + SITE_BYTES, poolCount);
-    RegionsFromWords(sIndexBlob + TEXT_INDEX_HEADER + INDEX_BYTES + SITE_BYTES + poolCount * POOL_WORDS * 4, regionCount);
+    PoolsFromWords(p, poolCount);
+    RegionsFromWords(p + poolCount * POOL_WORDS * 4, regionCount);
     return 1;
 }
 
-/* Writes the built index (sIndexBlob already holds sIndex and sSites). */
+/* Writes the built index (sIndex and sSites packed, see above). */
 static void SaveIndexFile(void)
 {
-    unsigned char *h = sIndexBlob, *p;
+    unsigned char *h, *p;
     uint32_t pools, regions, total, i;
     CountPoolsRegions(&pools, &regions);
-    total = (uint32_t)(TEXT_INDEX_HEADER + INDEX_BYTES + SITE_BYTES + pools * POOL_WORDS * 4 + regions * REGION_WORDS * 4);
+    total = (uint32_t)IndexFileSize(sFill[0], sFill[1], pools, regions);
+    h = (unsigned char *)malloc(total);
+    if (!h) {
+        Platform_Log("text: no memory to write " TEXT_INDEX_FILE "\n");
+        return;
+    }
     memset(h, 0, TEXT_INDEX_HEADER);
     Wr32(h, TEXT_INDEX_MAGIC);
     Wr32(h + 4, TEXT_INDEX_FORMAT);
@@ -284,7 +351,8 @@ static void SaveIndexFile(void)
     Wr32(h + 44, pools);
     Wr32(h + 48, regions);
     Wr32(h + 52, total);
-    p = sIndexBlob + TEXT_INDEX_HEADER + INDEX_BYTES + SITE_BYTES;
+    p = PackTable(h + TEXT_INDEX_HEADER, sIndex, INDEX_BITS);
+    p = PackTable(p, sSites, SITE_BITS);
     {
         uint32_t words[POOL_MAX * POOL_WORDS];
         int n = PoolsToWords(words);
@@ -298,10 +366,11 @@ static void SaveIndexFile(void)
         for (i = 0; i < (uint32_t)n; i++)
             Wr32(p + i * 4, words[i]);
     }
-    if (Platform_WriteFile(TEXT_INDEX_FILE, sIndexBlob, total) != 0)
+    if (Platform_WriteFile(TEXT_INDEX_FILE, h, total) != 0)
         Platform_Log("text: cannot write " TEXT_INDEX_FILE "\n");
     else
         Platform_Log("text: " TEXT_INDEX_FILE " written (%u bytes)\n", total);
+    free(h);
 }
 
 static void BuildIndex(void)
@@ -319,13 +388,20 @@ static void BuildIndex(void)
     }
     sIndex = (struct Entry *)(sIndexBlob + TEXT_INDEX_HEADER);
     sSites = (struct Entry *)(sIndexBlob + TEXT_INDEX_HEADER + INDEX_BYTES);
-    got = Platform_ReadFile(TEXT_INDEX_FILE, sIndexBlob, TEXT_INDEX_MAX);
-    if (got > 0 && LoadIndexFile(got)) {
-        uint32_t pools, regions;
-        CountPoolsRegions(&pools, &regions);
-        Platform_Log("text: index from " TEXT_INDEX_FILE ": %u string entries, %u pointer entries, %u pools, %u regions, %u ms\n",
-                     sFill[0], sFill[1], pools, regions, (unsigned)((Platform_TimeUs() - t0) / 1000));
-        return;
+    {
+        /* the packed file is at most as large as the full tables */
+        unsigned char *file = (unsigned char *)malloc(TEXT_INDEX_MAX);
+        int ok;
+        got = file ? Platform_ReadFile(TEXT_INDEX_FILE, file, TEXT_INDEX_MAX) : -1;
+        ok = got > 0 && LoadIndexFile(file, got);
+        free(file);
+        if (ok) {
+            uint32_t pools, regions;
+            CountPoolsRegions(&pools, &regions);
+            Platform_Log("text: index from " TEXT_INDEX_FILE ": %u string entries, %u pointer entries, %u pools, %u regions, %u ms\n",
+                         sFill[0], sFill[1], pools, regions, (unsigned)((Platform_TimeUs() - t0) / 1000));
+            return;
+        }
     }
     if (got > 0) {
         /* a stale file: start from empty tables */
@@ -335,7 +411,7 @@ static void BuildIndex(void)
     Platform_Log("text: building the string index\n");
     for (i = 1; i < n; i++) {
         long e;
-        if (gHostRom[i] == 0 || !StringStart(i))
+        if (gHostRom[i] == 0 || (!StringStart(i) && !PoolText(i)))
             continue;
         e = StrEnd(i);
         if (e < 0)
@@ -1155,7 +1231,7 @@ const unsigned char *Port_Text(const unsigned char *s)
         Port_Crumb("text %.40s", s);
     if (s >= gHostRom && s < gHostRom + gHostRomSize) {
         r = s - gHostRom;
-        if (r == 0 || gHostRom[r - 1] != 0)
+        if (r == 0 || (gHostRom[r - 1] != 0 && !PoolText((uint32_t)r)))
             return PageOf(s); /* inside a string */
     } else {
         for (n = 0; n < MAX_STR && s[n]; n++)

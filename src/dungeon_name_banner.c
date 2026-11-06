@@ -33,6 +33,31 @@ static s32 DisplayCharOnScreen(u32 chr, s32 x, s32 y);
 static UnkStruct_sub_803DC6C *sub_803DEC8(s32 chr);
 static void sub_803DD30(u8 *a0, u32 *a1);
 
+#ifdef PORT
+#include "port/port_text.h"
+/* The European banner font has single-byte glyphs for accented letters
+ * (ö, ü ...); the US code reads every byte >= 0x80 as the first of a
+ * two-byte (Japanese) code. A byte the font has is one character. */
+static bool8 BannerHasGlyph(u32 chr)
+{
+    UnkStruct_sub_803DC6C *strPtr = *((UnkStruct_sub_803DC6C **) gDungeonNameBannerFontFile->data);
+    s32 lo = 0, hi = gDungeonNameBannerFont - 1;
+    while (lo <= hi) {
+        s32 mid = (lo + hi) / 2;
+        if (strPtr[mid].unk4 == chr)
+            return TRUE;
+        if (strPtr[mid].unk4 < chr)
+            lo = mid + 1;
+        else
+            hi = mid - 1;
+    }
+    return FALSE;
+}
+#define BANNER_TWO_BYTES(c, next) (((c) & 0x80) && (next) != '\0' && !BannerHasGlyph(c))
+#else
+#define BANNER_TWO_BYTES(c, next) (((c) & 0x80) && (next) != '\0')
+#endif
+
 struct DungeonNameFontFileData
 {
     /* 0x0 */ u8 unk0;
@@ -61,6 +86,9 @@ void ShowDungeonNameBanner_Async(void)
     if (ShouldShowDungeonBanner()) {
         s32 currFloor = gDungeon->unk644.dungeonLocation.floor + gDungeon->startFloorId;
         const u8 *dungName = GetDungeonName2(gDungeon->unk644.dungeonLocation.id);
+#ifdef PORT
+        dungName = Port_Text(dungName);
+#endif
         s32 r5 = 10;
 
         for (r7 = 0; r7 < 8; r7++) {
@@ -88,6 +116,13 @@ void ShowDungeonNameBanner_Async(void)
 
         DisplayStringOnScreen(text, (224 - CalcStringWidth(text)) / 2, y + 32);
         gUnknown_20274A5 = TRUE;
+#ifdef PORT
+        /* On the GBA the name stays while the floor is generated (about a
+         * second); here generation is instant and the banner faded out
+         * before it could be read. Hold it for that time. */
+        for (i = 0; i < 75; i++)
+            DungeonRunFrameActions(2);
+#endif
     }
 
     CloseFile(gDungeonNameBannerFontFile);
@@ -109,7 +144,7 @@ static s32 DisplayStringOnScreen(const u8 *dungName, s32 x, s32 y)
             x += 12;
         }
         else {
-            if (currChar & 0x80 && *dungName != '\0') {
+            if (BANNER_TWO_BYTES(currChar, *dungName)) {
                 currChar = (currChar << 8) | *dungName;
                 dungName++;
             }
@@ -247,7 +282,7 @@ static s32 CalcStringWidth(const u8 *dungName)
         else {
             struct UnkStruct_sub_803DC6C *strPtr;
 
-            if (currChar & 0x80 && *dungName != '\0') {
+            if (BANNER_TWO_BYTES(currChar, *dungName)) {
                 currChar = (currChar << 8) | *dungName;
                 dungName++;
             }

@@ -2,7 +2,7 @@
 # vita.sh - test data of the PMD Vita port in one step (runs on the Pi).
 #
 #   ./vita.sh fetch <name>   fetch log.txt, log_prev.txt, crumbs.txt, settings.ini,
-#                            romindex.txt (size only), the quick save, all core dumps
+#                            romindex.bin (size only), the quick save, all core dumps
 #                            (ux0:data/*.psp2dmp) and all screenshots
 #                            (ux0:picture/SCREENSHOT/**) from the Vita into runs/<name>/,
 #                            delete the screenshots and dumps on the Vita, commit, push

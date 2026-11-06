@@ -135,6 +135,7 @@ void Port_OamSlot(int slot, int index)
         sSlotX[slot] = PORT_GBA_W / 2;
         sSlotY[slot] = PORT_GBA_H / 2;
         sSlotUi[slot] = 0;
+        sSlotFrame[slot] = 0; /* parked by the game: GBA rules */
         return;
     }
     sSlotX[slot] = sStagedX[index];
@@ -982,6 +983,14 @@ void Port_ViewBeforeRender(int *width, int *height)
         /* a slot the game's sprite system did not fill this frame (or the
          * one before) keeps GBA rules: parked below line 160 = hidden */
         virtuappu_mode1_obj_staged[i] = sSlotFrame[i] + 2 > Port_FrameCounter() + 1 && sSlotFrame[i] != 0;
+#ifndef __vita__
+        /* PMD_UIOFF_LOG=1: screen UI sprites outside the GBA screen */
+        if (getenv("PMD_UIOFF_LOG") && virtuappu_mode1_obj_staged[i] && sSlotUi[i] && sActive && UiSpriteOffScreen(i)) {
+            uint16_t q[3];
+            memcpy(q, gHostOam + i * 8, 6);
+            Platform_Log("uioff %u scene %d slot %d base %d,%d oam %04x %04x %04x\n", Port_FrameCounter(), sSceneLatched, i, sSlotX[i], sSlotY[i], q[0], q[1], q[2]);
+        }
+#endif
         if (virtuappu_mode1_obj_staged[i] && sSlotUi[i] && sActive && !sPictureClamp &&
             sSceneLatched != PORT_SCENE_DUNGEON && UiSpriteOffScreen(i))
             virtuappu_mode1_obj_dy[i] = 0x3000; /* far below the frame: not drawn */

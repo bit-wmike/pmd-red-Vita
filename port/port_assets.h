@@ -48,6 +48,9 @@ void PortAsset_Add(const char *name, void *dst, unsigned size, unsigned capacity
 /* After Port_LoadRom: blocks taken over only partly (another ROM version)
  * and blocks not found at all. */
 extern unsigned gPortAssetsPartial, gPortAssetsMissing;
+/* After Port_LoadRom: 1 when the ROM was searched (first start, other ROM,
+ * new data blocks) and romindex.bin written, 0 when it came from the cache. */
+extern int gPortAssetsCacheBuilt;
 
 /* The ROM's own file archives ("pksdir0"): a file by name, as a pointer into
  * the ROM image (NULL if the ROM has no such file). */

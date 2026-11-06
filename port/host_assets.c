@@ -6,10 +6,10 @@
  * and a hash of its contents (tools/port/gen_data.py for the assembler data
  * files, tools/port/pp_assets.py for INCBIN arrays in C). At start the ROM
  * is scanned for those contents, the arrays are filled and the pointers
- * inside the assembler data get their host addresses. The ROM offsets found
- * are cached in romindex.txt (keyed by the ROM's SHA-1 and a hash of the
- * block table, so a new port version with unchanged data keeps it), so
- * later starts only copy.
+ * inside the assembler data get their host addresses. The search result is
+ * cached in romindex.bin (keyed by a fingerprint of the ROM and a hash of
+ * the block table, so a new port version with unchanged data keeps it), so
+ * later starts only copy: no hashing of blocks, no SHA-1 of the ROM.
  */
 #include <stdint.h>
 #include <stdlib.h>
@@ -102,6 +102,14 @@ static uint32_t Rol(uint32_t x, int n)
     return (x << n) | (x >> (32 - n));
 }
 
+/* One 64-byte block; the four round groups as separate loops (the first
+ * start hashes all 32 MiB, a branch per round tripled the time). */
+#define SHA1_ROUND(f, k)                                     \
+    do {                                                     \
+        uint32_t t_ = Rol(a, 5) + (f) + e + (k) + w[i];      \
+        e = d; d = c; c = Rol(b, 30); b = a; a = t_;         \
+    } while (0)
+
 static void Sha1Block(struct Sha1 *s, const unsigned char *p)
 {
     uint32_t w[80], a, b, c, d, e;
@@ -111,15 +119,14 @@ static void Sha1Block(struct Sha1 *s, const unsigned char *p)
     for (i = 16; i < 80; i++)
         w[i] = Rol(w[i - 3] ^ w[i - 8] ^ w[i - 14] ^ w[i - 16], 1);
     a = s->h[0]; b = s->h[1]; c = s->h[2]; d = s->h[3]; e = s->h[4];
-    for (i = 0; i < 80; i++) {
-        uint32_t f, k, t;
-        if (i < 20) { f = (b & c) | (~b & d); k = 0x5A827999; }
-        else if (i < 40) { f = b ^ c ^ d; k = 0x6ED9EBA1; }
-        else if (i < 60) { f = (b & c) | (b & d) | (c & d); k = 0x8F1BBCDC; }
-        else { f = b ^ c ^ d; k = 0xCA62C1D6; }
-        t = Rol(a, 5) + f + e + k + w[i];
-        e = d; d = c; c = Rol(b, 30); b = a; a = t;
-    }
+    for (i = 0; i < 20; i++)
+        SHA1_ROUND(d ^ (b & (c ^ d)), 0x5A827999u);
+    for (; i < 40; i++)
+        SHA1_ROUND(b ^ c ^ d, 0x6ED9EBA1u);
+    for (; i < 60; i++)
+        SHA1_ROUND((b & c) | (d & (b | c)), 0x8F1BBCDCu);
+    for (; i < 80; i++)
+        SHA1_ROUND(b ^ c ^ d, 0xCA62C1D6u);
     s->h[0] += a; s->h[1] += b; s->h[2] += c; s->h[3] += d; s->h[4] += e;
 }
 
@@ -409,18 +416,21 @@ static size_t CountUnfound(void)
 
 /* ---- the cached index ---- */
 
-/* The SHA-1 of the loaded ROM, computed once (32 MiB take a while on the Vita). */
+/* The SHA-1 of the loaded ROM, computed once (32 MiB take seconds on the
+ * Vita). A start from romindex.bin takes it from there (the cache's ROM
+ * fingerprint matched) and never hashes the whole ROM. */
+static unsigned char sRomSha[20];
+static const unsigned char *sRomShaOf;
+static size_t sRomShaSize;
+
 void Port_RomSha1(unsigned char out[20])
 {
-    static unsigned char sha[20];
-    static const unsigned char *shaOf;
-    static size_t shaSize;
-    if (shaOf != gHostRom || shaSize != gHostRomSize) {
-        Port_Sha1(gHostRom, gHostRomSize, sha);
-        shaOf = gHostRom;
-        shaSize = gHostRomSize;
+    if (sRomShaOf != gHostRom || sRomShaSize != gHostRomSize) {
+        Port_Sha1(gHostRom, gHostRomSize, sRomSha);
+        sRomShaOf = gHostRom;
+        sRomShaSize = gHostRomSize;
     }
-    memcpy(out, sha, 20);
+    memcpy(out, sRomSha, 20);
 }
 
 static void HashBytes(uint64_t *h, const void *p, size_t n)
@@ -465,8 +475,10 @@ static uint64_t TableHash(void)
     return h;
 }
 
-/* The header line of romindex.txt. Computed once, before the scan (the scan
- * changes the romAddr fields that the table hash covers). */
+/* The header line of romindex.txt, the cache of port versions up to 0.1.19
+ * (read once to build romindex.bin without a new scan; no longer written).
+ * Computed before the scan (the scan changes the romAddr fields that the
+ * table hash covers). */
 static char sIndexHeader[160];
 
 static const char *IndexHeader(void)
@@ -486,12 +498,13 @@ static const char *IndexHeader(void)
 static void LoadIndex(void)
 {
     static char text[4 << 20];
-    const char *header = IndexHeader();
+    const char *header;
     long n = Platform_ReadFile("romindex.txt", text, sizeof(text) - 1);
     char *line;
     size_t hits = 0, absent = 0, i;
     if (n <= 0)
         return;
+    header = IndexHeader(); /* only now: it hashes the whole ROM */
     text[n] = 0;
     line = strtok(text, "\n");
     if (!line || strcmp(line, header) != 0) {
@@ -533,24 +546,284 @@ static void LoadIndex(void)
                  (unsigned)absent);
 }
 
-static void SaveIndex(void)
+/* ---- the start cache (romindex.bin) ----
+ *
+ * romindex.txt (above) only says where each block is; every start still
+ * hashed every block and the whole ROM (SHA-1) to check it - ~4 s on the
+ * Vita. romindex.bin is the result of the whole search for one ROM and one
+ * build's block table: the state and ROM address of every block in table
+ * order, the ROM's SHA-1 and the offsets of the ROM's file archives. It is
+ * keyed by a fingerprint of the ROM (size, cartridge header, 512 bytes at
+ * every 64 KiB) and a hash of the block table; when both match, the blocks
+ * are copied from their places without being hashed again (the same ROM
+ * gives the same matches). Little-endian, as the Vita and the test hosts:
+ *   u32 magic "PMDC", u32 format, u64 table hash, u64 fingerprint,
+ *   u8 sha1[20], u32 rom size, u32 block count, u32 0, u32 archive count,
+ *   u32 checksum of the rest of the file (low half of HashWords)
+ *   u32 romAddr[blocks], u8 state[blocks] (0 none, 1 exact, 2 partial,
+ *   0xff not in this ROM), pad to 4, u32 archive offsets[archives] */
+#define CACHE_FILE "romindex.bin"
+#define CACHE_MAGIC 0x43444d50u /* "PMDC" */
+#define CACHE_FORMAT 1
+#define CACHE_HEADER 64
+#define CACHE_ABSENT 0xFF
+#define ARCHIVES_MAX 64
+
+static uint32_t sArchiveOffs[ARCHIVES_MAX];
+static unsigned sArchiveCount;
+static int sArchivesKnown; /* sArchiveOffs came from the cache */
+static unsigned char *sCacheImage; /* built during a search, written after IndexRomArchives */
+
+/* FNV-1a over 32-bit words (4x fewer multiplications than per byte; the
+ * tail bytes one by one) */
+static uint64_t HashWords(uint64_t h, const void *data, size_t n)
 {
-    size_t cap = 64 + sAssetCount * 120, n = 0, i;
-    char *text = (char *)malloc(cap);
-    if (!text)
-        return;
-    n = (size_t)snprintf(text, cap, "%s\n", IndexHeader());
+    const unsigned char *p = (const unsigned char *)data;
+    while (n >= 4) {
+        uint32_t w;
+        memcpy(&w, p, 4);
+        h ^= w;
+        h *= 0x100000001b3ull;
+        p += 4;
+        n -= 4;
+    }
+    while (n--) {
+        h ^= *p++;
+        h *= 0x100000001b3ull;
+    }
+    return h;
+}
+
+/* The block table as romindex.bin is keyed by (the same fields as
+ * TableHash, which keys romindex.txt; must run before any search changes
+ * the romAddr fields). */
+static uint64_t FastTableHash(void)
+{
+    uint64_t h = 0xcbf29ce484222325ull;
+    size_t i;
+    uint32_t n = (uint32_t)sAssetCount;
+    h = HashWords(h, &n, 4);
+    for (i = 0; i < sAssetCount; i++) {
+        const struct Asset *a = &sAssets[i];
+        uint32_t f[12];
+        f[0] = a->size;
+        memcpy(&f[1], &a->hash, 8);
+        memcpy(&f[3], &a->key1, 8);
+        f[5] = (uint32_t)a->keyOff1;
+        memcpy(&f[6], &a->key2, 8);
+        f[8] = (uint32_t)a->keyOff2;
+        f[9] = a->romAddr;
+        f[10] = a->holeCount | a->childCount << 20;
+        f[11] = a->chunkCount ^ (uint32_t)a->parent << 12;
+        h = HashWords(h, a->name, strlen(a->name) + 1);
+        h = HashWords(h, f, sizeof(f));
+        h = HashWords(h, &a->childCount, 4);
+        h = HashWords(h, &a->parent, 4);
+        if (a->holes)
+            h = HashWords(h, a->holes, (size_t)a->holeCount * 2 * 4);
+        /* (the chunk hashes follow from the content and the holes, which
+         * a->hash and the hole list cover: only their number is hashed) */
+    }
+    return h;
+}
+
+/* Which ROM is loaded, without reading all of it: the size, the cartridge
+ * header and 512 bytes at every 64 KiB (256 KiB in all) plus the last 512.
+ * A different dump, version or patch changes some of them; the full SHA-1
+ * is stored in the cache when it is built. */
+static uint64_t RomFingerprint(void)
+{
+    uint64_t h = 0xcbf29ce484222325ull;
+    uint32_t size = (uint32_t)gHostRomSize, off;
+    h = HashWords(h, &size, 4);
+    h = HashWords(h, gHostRom, size < 0xC0 ? size : 0xC0);
+    for (off = 0; off + 512 <= size; off += 0x10000)
+        h = HashWords(h, gHostRom + off, 512);
+    if (size >= 512)
+        h = HashWords(h, gHostRom + size - 512, 512);
+    return h;
+}
+
+static uint32_t Get32(const unsigned char *p)
+{
+    return (uint32_t)p[0] | (uint32_t)p[1] << 8 | (uint32_t)p[2] << 16 | (uint32_t)p[3] << 24;
+}
+
+static void Put32(unsigned char *p, uint32_t v)
+{
+    p[0] = (unsigned char)v;
+    p[1] = (unsigned char)(v >> 8);
+    p[2] = (unsigned char)(v >> 16);
+    p[3] = (unsigned char)(v >> 24);
+}
+
+static void Put64(unsigned char *p, uint64_t v)
+{
+    Put32(p, (uint32_t)v);
+    Put32(p + 4, (uint32_t)(v >> 32));
+}
+
+static size_t CacheSize(size_t blocks, unsigned archives)
+{
+    return CACHE_HEADER + blocks * 4 + ((blocks + 3) & ~(size_t)3) + (size_t)archives * 4;
+}
+
+/* Applies romindex.bin when it is for this ROM and this block table: the
+ * blocks it lists as found are copied from their places, exactly as
+ * LoadIndex/Verify/TryPartial would after hashing them (same order, same
+ * bytes, same small-hole translation). 1 when applied, else 0 (nothing
+ * changed). */
+static int LoadCache(uint64_t tableHash, uint64_t fingerprint)
+{
+    size_t cap = CacheSize(sAssetCount, ARCHIVES_MAX), i, hits = 0, absent = 0, partial = 0;
+    unsigned char *img = (unsigned char *)malloc(cap);
+    const unsigned char *addrs, *states;
+    unsigned archives;
+    long n;
+    if (!img)
+        return 0;
+    n = Platform_ReadFile(CACHE_FILE, img, cap);
+    if (n <= 0) {
+        free(img);
+        return 0;
+    }
+    if (n < CACHE_HEADER || Get32(img) != CACHE_MAGIC || Get32(img + 4) != CACHE_FORMAT) {
+        Platform_Log("assets: " CACHE_FILE " has another format\n");
+        free(img);
+        return 0;
+    }
+    archives = Get32(img + 56);
+    if (Get32(img + 8) != (uint32_t)tableHash || Get32(img + 12) != (uint32_t)(tableHash >> 32) ||
+        Get32(img + 16) != (uint32_t)fingerprint || Get32(img + 20) != (uint32_t)(fingerprint >> 32) ||
+        Get32(img + 44) != (uint32_t)gHostRomSize || Get32(img + 48) != (uint32_t)sAssetCount) {
+        Platform_Log("assets: " CACHE_FILE " is for another ROM or other data blocks\n");
+        free(img);
+        return 0;
+    }
+    if (archives > ARCHIVES_MAX || (size_t)n != CacheSize(sAssetCount, archives)) {
+        Platform_Log("assets: " CACHE_FILE " has unexpected sizes (%ld bytes)\n", n);
+        free(img);
+        return 0;
+    }
+    if (Get32(img + 60) != (uint32_t)HashWords(0xcbf29ce484222325ull, img + CACHE_HEADER, (size_t)n - CACHE_HEADER)) {
+        Platform_Log("assets: " CACHE_FILE " is damaged (checksum)\n");
+        free(img);
+        return 0;
+    }
+    addrs = img + CACHE_HEADER;
+    states = addrs + sAssetCount * 4;
+    /* check everything before touching a block */
+    for (i = 0; i < sAssetCount; i++) {
+        uint32_t addr = Get32(addrs + i * 4);
+        unsigned st = states[i];
+        if (st == 1 || st == 2) {
+            if (addr < 0x08000000u || (uint64_t)(addr - 0x08000000u) + sAssets[i].size > gHostRomSize)
+                break;
+        } else if (st != 0 && st != CACHE_ABSENT)
+            break;
+    }
+    if (i < sAssetCount) {
+        Platform_Log("assets: " CACHE_FILE " is damaged (block %u)\n", (unsigned)i);
+        free(img);
+        return 0;
+    }
     for (i = 0; i < sAssetCount; i++) {
         struct Asset *a = &sAssets[i];
-        if (a->found == 1 || a->found == 2)
-            n += (size_t)snprintf(text + n, cap - n, "%s %08x\n", a->name, a->romAddr);
-        else if (a->found == 0)
-            n += (size_t)snprintf(text + n, cap - n, "%s -\n", a->name); /* the scans did not find it */
+        unsigned st = states[i];
+        uint32_t off;
+        if (st == 0 || a->found || a->absent)
+            continue;
+        if (st == CACHE_ABSENT) {
+            a->absent = 1;
+            absent++;
+            continue;
+        }
+        off = Get32(addrs + i * 4) - 0x08000000u;
+        memcpy(a->dst, gHostRom + off, a->size);
+        TranslateSmallHoles(a);
+        a->romAddr = off + 0x08000000u;
+        a->found = (int)st;
+        hits++;
+        partial += st == 2;
     }
-    if (Platform_WriteFile("romindex.txt", text, n) != 0)
-        Platform_Log("assets: cannot write romindex.txt\n");
-    free(text);
+    for (i = 0; i < archives; i++)
+        sArchiveOffs[i] = Get32(states + ((sAssetCount + 3) & ~(size_t)3) + i * 4);
+    sArchiveCount = archives;
+    sArchivesKnown = 1;
+    memcpy(sRomSha, img + 24, 20);
+    sRomShaOf = gHostRom;
+    sRomShaSize = gHostRomSize;
+    free(img);
+    Platform_Log("assets: %u of %u blocks from " CACHE_FILE " (%u partly), %u known to be absent\n", (unsigned)hits,
+                 (unsigned)sAssetCount, (unsigned)partial, (unsigned)absent);
+    return 1;
 }
+
+/* The search result, taken after the scans (before
+ * PlaceByNeighbours and the ROM files change states); the archive offsets
+ * are added and the file written once IndexRomArchives has run. */
+static void MakeCache(uint64_t tableHash, uint64_t fingerprint)
+{
+    size_t i;
+    unsigned char *img = (unsigned char *)calloc(1, CacheSize(sAssetCount, ARCHIVES_MAX)), *states;
+    if (!img)
+        return;
+    Put32(img, CACHE_MAGIC);
+    Put32(img + 4, CACHE_FORMAT);
+    Put64(img + 8, tableHash);
+    Put64(img + 16, fingerprint);
+    Port_RomSha1(img + 24);
+    Put32(img + 44, (uint32_t)gHostRomSize);
+    Put32(img + 48, (uint32_t)sAssetCount);
+    states = img + CACHE_HEADER + sAssetCount * 4;
+    for (i = 0; i < sAssetCount; i++) {
+        const struct Asset *a = &sAssets[i];
+        if ((a->found == 1 || a->found == 2) && a->romAddr >= 0x08000000u) {
+            /* (constant blocks are found without a place: filled again at every start) */
+            Put32(img + CACHE_HEADER + i * 4, a->romAddr);
+            states[i] = (unsigned char)a->found;
+        } else if (a->found == 0)
+            states[i] = CACHE_ABSENT; /* as "name -" in romindex.txt */
+    }
+    free(sCacheImage);
+    sCacheImage = img;
+}
+
+static void WriteCache(void)
+{
+    size_t i, blocks = sAssetCount, size;
+    unsigned char *arch;
+    if (!sCacheImage)
+        return;
+    size = CacheSize(blocks, sArchiveCount);
+    Put32(sCacheImage + 56, sArchiveCount);
+    arch = sCacheImage + CACHE_HEADER + blocks * 4 + ((blocks + 3) & ~(size_t)3);
+    for (i = 0; i < sArchiveCount; i++)
+        Put32(arch + i * 4, sArchiveOffs[i]);
+    Put32(sCacheImage + 60, (uint32_t)HashWords(0xcbf29ce484222325ull, sCacheImage + CACHE_HEADER, size - CACHE_HEADER));
+    if (Platform_WriteFile(CACHE_FILE, sCacheImage, size) != 0)
+        Platform_Log("assets: cannot write " CACHE_FILE "\n");
+    else
+        Platform_Log("assets: " CACHE_FILE " written (%u bytes)\n", (unsigned)size);
+    free(sCacheImage);
+    sCacheImage = NULL;
+}
+
+/* Start-up timing: one log line with the phases of Port_LoadRom. */
+static char sPhaseLog[400];
+static size_t sPhaseLen;
+static uint64_t sPhaseT;
+
+static void Phase(const char *what)
+{
+    uint64_t t = Platform_TimeUs();
+    if (sPhaseLen < sizeof(sPhaseLog))
+        sPhaseLen += (size_t)snprintf(sPhaseLog + sPhaseLen, sizeof(sPhaseLog) - sPhaseLen, " %s %u", what,
+                                      (unsigned)((t - sPhaseT) / 1000));
+    sPhaseT = t;
+}
+
+int gPortAssetsCacheBuilt;
 
 /* ---- loading ---- */
 
@@ -634,8 +907,11 @@ static void Relocate(void)
 int Port_LoadRom(unsigned char *rom, size_t size)
 {
     size_t i, missing = 0, known = 0;
-    uint64_t t0 = Platform_TimeUs();
+    uint64_t t0 = Platform_TimeUs(), tableHash, fingerprint;
+    int fromCache;
 
+    sPhaseT = t0;
+    sPhaseLen = 0;
     gHostRom = rom;
     gHostRomSize = size;
 
@@ -666,6 +942,10 @@ int Port_LoadRom(unsigned char *rom, size_t size)
     }
     /* the INCBIN arrays of the C files */
     PortAssets_RegisterAll();
+    Phase("register");
+    tableHash = FastTableHash(); /* before any search changes romAddr */
+    fingerprint = RomFingerprint();
+    Phase("keys");
 
     /* 1. constant blocks need no ROM; blocks whose address the decomp states */
     for (i = 0; i < sAssetCount; i++) {
@@ -685,11 +965,16 @@ int Port_LoadRom(unsigned char *rom, size_t size)
                 Platform_Log("assets: %s is not at %08x\n", a->name, a->romAddr);
         }
     }
-    /* 2. the cached index, 3. scanning the ROM */
-    LoadIndex();
+    Phase("constants");
+    /* 2. the start cache (or the older romindex.txt), 3. scanning the ROM */
+    fromCache = LoadCache(tableHash, fingerprint);
+    if (!fromCache)
+        LoadIndex();
+    Phase("index");
     PropagateParents();
     missing = CountUnfound();
     if (missing) {
+        fromCache = 0;
         Platform_Log("assets: scanning the ROM for %u blocks\n", (unsigned)missing);
         Scan(4, SCAN_PARENTS);
         if (CountUnfound())
@@ -706,11 +991,21 @@ int Port_LoadRom(unsigned char *rom, size_t size)
             Platform_Log("assets: looking for partial matches of %u blocks\n", (unsigned)CountUnfound());
             Scan(4, SCAN_PARTIAL);
         }
-        SaveIndex();
+        Phase("scan");
+    }
+    gPortAssetsCacheBuilt = !fromCache;
+    if (!fromCache) {
+        MakeCache(tableHash, fingerprint); /* computes the ROM's SHA-1 if no index did */
+        Phase("sha1");
     }
     PlaceByNeighbours();
+    Phase("neighbours");
     IndexRomArchives();
+    if (!fromCache)
+        WriteCache();
+    Phase("archives");
     FillArraysFromRomFiles();
+    Phase("files");
     missing = 0;
     gPortAssetsPartial = 0;
     for (i = 0; i < sAssetCount; i++) {
@@ -739,6 +1034,7 @@ int Port_LoadRom(unsigned char *rom, size_t size)
     gPortAssetsMissing = (unsigned)missing;
     BuildAddressIndex(); /* before Relocate: it looks blocks up by address */
     Relocate();
+    Phase("relocate");
 #ifndef __vita__
     {
         const char *dbg = getenv("PMD_ASSET_DEBUG");
@@ -761,6 +1057,7 @@ int Port_LoadRom(unsigned char *rom, size_t size)
     Platform_Log("assets: %u blocks, %u by address, %u partial, %u missing, %u relocations, %u ms\n",
                  (unsigned)sAssetCount, (unsigned)known, gPortAssetsPartial, (unsigned)missing, gPortRelocCount,
                  (unsigned)((Platform_TimeUs() - t0) / 1000));
+    Platform_Log("[start] assets (ms):%s%s\n", sPhaseLog, fromCache ? " (from " CACHE_FILE ")" : "");
     /* the asset table stays: OpenFile asks about the state of its files */
     free(sBuckets);
     sBuckets = NULL;
@@ -894,36 +1191,63 @@ static int CompareRomFile(const void *x, const void *y)
     return strcmp((const char *)gHostRom + a->nameOff, (const char *)gHostRom + b->nameOff);
 }
 
-/* Finds the ROM's "pksdir0" archives and lists their files by name. */
+/* The files of the "pksdir0" archive at ROM offset p, listed; 0 when p
+ * holds no archive header. */
+static int ReadArchive(size_t p, size_t *cap)
+{
+    int32_t count;
+    uint32_t entries, i;
+    if (p + 16 > gHostRomSize || memcmp(gHostRom + p, "pksdir0", 8) != 0)
+        return 0;
+    memcpy(&count, gHostRom + p + 8, 4);
+    memcpy(&entries, gHostRom + p + 12, 4);
+    if (count <= 0 || count > 5000 || entries < 0x08000000u || entries - 0x08000000u + (uint32_t)count * 8 > gHostRomSize)
+        return 0;
+    entries -= 0x08000000u;
+    for (i = 0; i < (uint32_t)count; i++) {
+        uint32_t nameAddr, dataAddr;
+        memcpy(&nameAddr, gHostRom + entries + i * 8, 4);
+        memcpy(&dataAddr, gHostRom + entries + i * 8 + 4, 4);
+        if (nameAddr < 0x08000000u || dataAddr < 0x08000000u || nameAddr - 0x08000000u >= gHostRomSize ||
+            dataAddr - 0x08000000u >= gHostRomSize)
+            break;
+        if (sRomFileCount == *cap) {
+            *cap = *cap ? *cap * 2 : 1024;
+            sRomFiles = (struct RomFile *)realloc(sRomFiles, *cap * sizeof(*sRomFiles));
+        }
+        sRomFiles[sRomFileCount].nameOff = nameAddr - 0x08000000u;
+        sRomFiles[sRomFileCount].dataOff = dataAddr - 0x08000000u;
+        sRomFileCount++;
+    }
+    return 1;
+}
+
+/* Finds the ROM's "pksdir0" archives and lists their files by name (the
+ * archive offsets come from romindex.bin when it was loaded: the scan of
+ * the whole ROM is skipped). */
 static void IndexRomArchives(void)
 {
     size_t p, cap = 0, archives = 0;
-    for (p = 0; p + 16 <= gHostRomSize; p += 4) {
-        int32_t count;
-        uint32_t entries, i;
-        if (memcmp(gHostRom + p, "pksdir0", 8) != 0)
-            continue;
-        memcpy(&count, gHostRom + p + 8, 4);
-        memcpy(&entries, gHostRom + p + 12, 4);
-        if (count <= 0 || count > 5000 || entries < 0x08000000u || entries - 0x08000000u + (uint32_t)count * 8 > gHostRomSize)
-            continue;
-        entries -= 0x08000000u;
-        for (i = 0; i < (uint32_t)count; i++) {
-            uint32_t nameAddr, dataAddr;
-            memcpy(&nameAddr, gHostRom + entries + i * 8, 4);
-            memcpy(&dataAddr, gHostRom + entries + i * 8 + 4, 4);
-            if (nameAddr < 0x08000000u || dataAddr < 0x08000000u || nameAddr - 0x08000000u >= gHostRomSize ||
-                dataAddr - 0x08000000u >= gHostRomSize)
-                break;
-            if (sRomFileCount == cap) {
-                cap = cap ? cap * 2 : 1024;
-                sRomFiles = (struct RomFile *)realloc(sRomFiles, cap * sizeof(*sRomFiles));
-            }
-            sRomFiles[sRomFileCount].nameOff = nameAddr - 0x08000000u;
-            sRomFiles[sRomFileCount].dataOff = dataAddr - 0x08000000u;
-            sRomFileCount++;
+    if (sArchivesKnown) {
+        unsigned k;
+        for (k = 0; k < sArchiveCount; k++)
+            archives += (size_t)ReadArchive(sArchiveOffs[k], &cap);
+    } else {
+        static const uint32_t magic = 0x64736b70u; /* "pksd" little-endian */
+        sArchiveCount = 0;
+        for (p = 0; p + 16 <= gHostRomSize; p += 4) {
+            uint32_t w;
+            memcpy(&w, gHostRom + p, 4);
+            if (w != magic || !ReadArchive(p, &cap))
+                continue;
+            if (sArchiveCount < ARCHIVES_MAX)
+                sArchiveOffs[sArchiveCount++] = (uint32_t)p;
+            archives++;
         }
-        archives++;
+        if (archives > ARCHIVES_MAX) {
+            free(sCacheImage); /* cannot be cached */
+            sCacheImage = NULL;
+        }
     }
     /* sizes: up to the next file's data */
     {
@@ -1176,7 +1500,9 @@ static void PlaceByNeighbours(void)
             romOff = sAssets[a->parent].romAddr - 0x08000000u + (uint32_t)(a->dst - sAssets[a->parent].dst);
             ok = 1;
         }
-        for (j = 0; j < sAssetCount && !ok; j++) {
+        /* the parts of a block follow it in the table: its neighbours are
+         * there (the same ones, in the same order, as in the whole table) */
+        for (j = (size_t)a->parent + 1; j <= (size_t)a->parent + sAssets[a->parent].childCount && j < sAssetCount && !ok; j++) {
             const struct Asset *b = &sAssets[j];
             if (b->parent != a->parent || b->found != 1 || b->romAddr < 0x08000000u)
                 continue;

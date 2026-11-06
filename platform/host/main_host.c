@@ -22,7 +22,7 @@
  *   PMD_WAV=1            write outdir/audio.wav
  *   PMD_TIMING=1         print the render time every 300 frames
  *   PMD_TRACE=file       per-frame checksums of the game state
- *   settings.ini, quicksave.bin and romindex.txt live in the output directory.
+ *   settings.ini, quicksave.bin, romindex.bin and textindex.bin live in the output directory.
  */
 #include <stdarg.h>
 #include <stdio.h>
@@ -284,17 +284,25 @@ int main(int argc, char **argv)
             fwrite(hdr, 1, 44, sWav);
     }
 
-    rom = ReadRom(argv[1], &romSize);
-    if (!rom) {
-        fprintf(stderr, "host: cannot read %s\n", argv[1]);
-        return 1;
-    }
-    if (!Port_RomMatches(rom, romSize))
-        fprintf(stderr, "host: note: %s is not the US 1.0 ROM (game code B24%c); data is matched by content\n", argv[1],
-                Port_RomVersion(rom, romSize) ? Port_RomVersion(rom, romSize) : '?');
-    if (Port_LoadRom(rom, romSize) != 0) {
-        fprintf(stderr, "host: cannot load the game data\n");
-        return 1;
+    {
+        uint64_t t0 = Platform_TimeUs(), t1;
+        rom = ReadRom(argv[1], &romSize);
+        if (!rom) {
+            fprintf(stderr, "host: cannot read %s\n", argv[1]);
+            return 1;
+        }
+        /* the game code only: a SHA-1 of the 32 MiB is no longer computed
+         * at every start (romindex.bin knows it) */
+        if (Port_RomVersion(rom, romSize) != 'E')
+            fprintf(stderr, "host: note: %s is not the US ROM (game code B24%c); data is matched by content\n", argv[1],
+                    Port_RomVersion(rom, romSize) ? Port_RomVersion(rom, romSize) : '?');
+        t1 = Platform_TimeUs();
+        if (Port_LoadRom(rom, romSize) != 0) {
+            fprintf(stderr, "host: cannot load the game data\n");
+            return 1;
+        }
+        fprintf(stderr, "[start] read rom %u ms, assets %u ms\n", (unsigned)((t1 - t0) / 1000),
+                (unsigned)((Platform_TimeUs() - t1) / 1000));
     }
 
     Port_Init();
