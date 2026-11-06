@@ -34,6 +34,42 @@ static uint32_t sFrameBuffer[PORT_VIEW_MAX_W * PORT_VIEW_MAX_H];
 static int sMainLoopHalt;
 static int sResetRequested;
 
+#ifndef __vita__
+/* PMD_PROF=n (host only): wall time of the frame's parts, printed every n
+ * frames as microseconds per frame. "logic" is the game code between two
+ * VBlank waits, "vblank" the interrupt handler (sound engine mixing). */
+enum { HPROF_LOGIC, HPROF_VIEW, HPROF_RENDER, HPROF_POST, HPROF_VBLANK, HPROF_AUDIO, HPROF_REST, HPROF_COUNT };
+static int sHProf = -1;
+static uint64_t sHProfSum[HPROF_COUNT], sHProfT;
+static unsigned sHProfFrames, sHProfRendered;
+static void HProfMark(int what)
+{
+    uint64_t now;
+    if (sHProf <= 0)
+        return;
+    now = Platform_TimeUs();
+    if (sHProfT)
+        sHProfSum[what] += now - sHProfT;
+    sHProfT = now;
+}
+static void HProfFrameEnd(void)
+{
+    static const char *const names[HPROF_COUNT] = {"logic", "view", "render", "post", "vblank", "audio", "rest"};
+    int i;
+    if (sHProf <= 0 || ++sHProfFrames < (unsigned)sHProf)
+        return;
+    printf("prof %u:", (unsigned)sFrameCounter);
+    for (i = 0; i < HPROF_COUNT; i++)
+        printf(" %s %.1f", names[i], (double)sHProfSum[i] / sHProfFrames);
+    printf(" (us/frame, %u of %u drawn)\n", sHProfRendered, sHProfFrames);
+    memset(sHProfSum, 0, sizeof(sHProfSum));
+    sHProfFrames = sHProfRendered = 0;
+}
+#define HPROF_MARK(what) HProfMark(what)
+#else
+#define HPROF_MARK(what) ((void)0)
+#endif
+
 #define IO16(off) (*(volatile u16 *)(gHostIo + (off)))
 
 /* ---------------------------------------------------------------------- */
@@ -164,6 +200,7 @@ static void RenderFrame(void)
     }
 #endif
     Port_ViewBeforeRender(&width, &height);
+    HPROF_MARK(HPROF_VIEW);
 
     memset(&ppu, 0, sizeof(ppu));
     ppu.frame_width = (uint16_t)width;
@@ -178,6 +215,7 @@ static void RenderFrame(void)
     Port_ViewAfterRender();
     Port_ProfileEnd(PORT_PROF_RENDER);
     sRendering = 0;
+    HPROF_MARK(HPROF_RENDER);
     {
         int top, bottom, y;
         Port_ViewBlankRows(&top, &bottom);
@@ -212,7 +250,12 @@ static void RenderFrame(void)
     /* port overlay (HP bars, clock) on top of the finished frame */
     Port_OverlayDraw(sFrameBuffer, width, height, PORT_VIEW_MAX_W);
 
+#ifndef __vita__
+    sHProfRendered++;
+#endif
+    HPROF_MARK(HPROF_POST);
     Platform_Present(sFrameBuffer, width, height, PORT_VIEW_MAX_W, Port_ViewZoomHeight());
+    HPROF_MARK(HPROF_REST);
 }
 
 /* ---- frame ------------------------------------------------------------ */
@@ -221,6 +264,11 @@ void HostRunFrame(void)
 {
     u16 keys;
 
+#ifndef __vita__
+    if (sHProf < 0)
+        sHProf = getenv("PMD_PROF") ? atoi(getenv("PMD_PROF")) : 0;
+#endif
+    HPROF_MARK(HPROF_LOGIC);
     Port_ViewBeforeLogicEnd();
     if ((gPortConfig.frameRate30 && (sFrameCounter & 1)) || !Platform_PaceAllowsRender())
         SkipFrame();
@@ -230,13 +278,17 @@ void HostRunFrame(void)
     /* VBlank */
     IO16(0x006) = 160;
     IO16(0x004) |= DISPSTAT_VBLANK;
+    HPROF_MARK(HPROF_REST);
     RaiseIrq(INTR_FLAG_VBLANK);
+    HPROF_MARK(HPROF_VBLANK);
     Port_ViewOnVBlank();
     Port_OverlayOnVBlank();
     virtuappu_mode1_commit_obj_metadata();
     IO16(0x004) &= ~DISPSTAT_VBLANK;
 
+    HPROF_MARK(HPROF_REST);
     HostAudio_EndFrame();
+    HPROF_MARK(HPROF_AUDIO);
 
     keys = Port_TranslateKeys(Platform_PollKeys());
     IO16(0x130) = (u16)(~keys & 0x3FF);
@@ -244,6 +296,10 @@ void HostRunFrame(void)
     Port_GameFrame(sMainLoopHalt);
     HostFlash_Sync();
     sFrameCounter++;
+    HPROF_MARK(HPROF_REST);
+#ifndef __vita__
+    HProfFrameEnd();
+#endif
 }
 
 static uint64_t sProfStart[PORT_PROF_COUNT], sProfSum[PORT_PROF_COUNT], sProfMax[PORT_PROF_COUNT];

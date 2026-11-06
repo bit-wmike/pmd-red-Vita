@@ -727,18 +727,56 @@ static void RunMenu(void)
 static int sWaitRelease; /* after the menu: ignore buttons until released */
 /* The rear touch panel is deliberately unused: it is too easy to touch by accident. */
 
-/* crumbs.txt: the last actions of the game, rewritten twice a second (a
- * crash without a usable core dump still leaves this trace). */
+/* crumbs.txt: the last actions of the game, rewritten six times a second (a
+ * crash without a usable core dump still leaves this trace). The file
+ * itself is written by a low-priority thread: open/write/rename on the
+ * memory card take milliseconds and stalled the game loop (catch-up frames). */
+static char sCrumbBuf[2048];
+static volatile int sCrumbLen;  /* > 0: sCrumbBuf waits for the writer */
+static SceUID sCrumbSema = -1;
+
+static int CrumbThread(SceSize args, void *argp)
+{
+    (void)args; (void)argp;
+    for (;;) {
+        sceKernelWaitSema(sCrumbSema, 1, NULL);
+        __sync_synchronize();
+        if (sCrumbLen > 0)
+            Platform_WriteFile("crumbs.txt", sCrumbBuf, (size_t)sCrumbLen);
+        __sync_synchronize();
+        sCrumbLen = 0;
+    }
+    return 0;
+}
+
 static void WriteCrumbs(void)
 {
     static unsigned sCount;
-    static char buf[2048];
+    static int sThreadState; /* 0 = not started, 1 = running, -1 = failed */
     int n;
     if (++sCount % 10)
         return;
-    n = snprintf(buf, sizeof(buf), "pmd %s crumbs (newest last)\n", PMD_PORT_VERSION);
-    n += Port_CrumbText(buf + n, (int)sizeof(buf) - n);
-    Platform_WriteFile("crumbs.txt", buf, (size_t)n);
+    if (sThreadState == 0) {
+        SceUID th;
+        sThreadState = -1;
+        sCrumbSema = sceKernelCreateSema("pmd_crumbs", 0, 0, 1, NULL);
+        if (sCrumbSema >= 0) {
+            th = sceKernelCreateThread("pmd_crumbs", CrumbThread, 0x10000100 + 20, 0x4000, 0, 0, NULL);
+            if (th >= 0 && sceKernelStartThread(th, 0, NULL) >= 0)
+                sThreadState = 1;
+        }
+    }
+    if (sThreadState > 0 && sCrumbLen != 0)
+        return; /* the writer is still busy: next time */
+    n = snprintf(sCrumbBuf, sizeof(sCrumbBuf), "pmd %s crumbs (newest last)\n", PMD_PORT_VERSION);
+    n += Port_CrumbText(sCrumbBuf + n, (int)sizeof(sCrumbBuf) - n);
+    if (sThreadState > 0) {
+        __sync_synchronize();
+        sCrumbLen = n;
+        sceKernelSignalSema(sCrumbSema, 1);
+    } else {
+        Platform_WriteFile("crumbs.txt", sCrumbBuf, (size_t)n);
+    }
 }
 
 uint16_t Platform_PollKeys(void)
