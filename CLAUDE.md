@@ -99,7 +99,7 @@ Schalter: `PMD_SHOT=f1,f2` / `PMD_SHOT_EVERY=n` (PPM), `PMD_VIEW=0/1/2`, `PMD_WA
   PPMs** (`cmp`); (2) Renderer-Änderungen Bild für Bild gegen die alte Version vergleichen;
   (3) Vita-Build ohne Fehler.
 
-## Stand (0.1.20, 06.11.2026)
+## Stand (0.1.21, 06.11.2026)
 - 0.1.12 (Mikes `run4`, 0.1.11: Absturz vor dem ersten Dungeon, Titel/Gesundheitshinweis englisch bzw.
   „fehlerhaft“, Tastatur-Müll bei der Namensgebung, Traumtext nicht zentriert): (1) **Absturz**: `lvmp001`
   (Levelkurve, AT-gepackt, 616-Byte-Block mit SIRO-Kopf) wird aus der EU-ROM genommen; `Port_ChooseFile`
@@ -123,6 +123,12 @@ Schalter: `PMD_SHOT=f1,f2` / `PMD_SHOT_EVERY=n` (PPM), `PMD_VIEW=0/1/2`, `PMD_WA
   UI-Ebene (BG0 mit eigenem dx) – Rücksprache mit Mike. `UniformMap` (einfarbige Karten → Bild mittig) ist
   drin, greift hier aber nicht (Karte hat echte Kacheln).
   (6) `vita.sh fetch` holt jetzt auch `pmd_red.sav`.
+- 0.1.21 (Mikes Wünsche zu 0.1.20): rechts im Rahmen Wurf-Item (`ITEM_FLAG_SET`, Anzahl summiert) + gehaltenes Item des
+  Anführers; Dungeon-Name oben im Rahmen, Etage nur links. **Kangama-Lager** im Port-Menü (`port/port_storage.c`, Regeln
+  wie `kangaskhan_storage1.c`; gesperrt: Laden-Ware, klebrig, Poké/benutzte TM, Lager 999, Beutel 20, vor der
+  Teamgründung, Dungeons ohne Items; nur in Eingabebildern – Hooks in `dungeon_vram.c`/`ground_lives_helper.c`).
+  Etagenleiste: ab 26 Etagen Ausschnitt von 25 um die aktuelle mit Sammelzeilen. Host: `PMD_STORAGE_TEST`,
+  `PMD_PANEL_FAKEFLOORS`. Lager-Seite: X/O lagert um, Dreieck/START zurück (mit Mike abstimmen).
 - 0.1.20 (Mikes `run8`, 0.1.19: Render ~6 ms statt 11,5, catchup 0; Quiz-Ergebnis teils englisch, Fragment links unter
   Textboxen, Dungeon-Name englisch, Etagen-Banner zu kurz, Weltkarte voller Müll-Sprites, Hänger im Dungeon nach
   Annahme von Jobs, Start viel langsamer als die anderen Ports). Fünf Agenten:
