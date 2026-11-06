@@ -99,7 +99,7 @@ Schalter: `PMD_SHOT=f1,f2` / `PMD_SHOT_EVERY=n` (PPM), `PMD_VIEW=0/1/2`, `PMD_WA
   PPMs** (`cmp`); (2) Renderer-Änderungen Bild für Bild gegen die alte Version vergleichen;
   (3) Vita-Build ohne Fehler.
 
-## Stand (0.1.21, 06.11.2026)
+## Stand (0.1.23, 06.11.2026)
 - 0.1.12 (Mikes `run4`, 0.1.11: Absturz vor dem ersten Dungeon, Titel/Gesundheitshinweis englisch bzw.
   „fehlerhaft“, Tastatur-Müll bei der Namensgebung, Traumtext nicht zentriert): (1) **Absturz**: `lvmp001`
   (Levelkurve, AT-gepackt, 616-Byte-Block mit SIRO-Kopf) wird aus der EU-ROM genommen; `Port_ChooseFile`
@@ -123,6 +123,18 @@ Schalter: `PMD_SHOT=f1,f2` / `PMD_SHOT_EVERY=n` (PPM), `PMD_VIEW=0/1/2`, `PMD_WA
   UI-Ebene (BG0 mit eigenem dx) – Rücksprache mit Mike. `UniformMap` (einfarbige Karten → Bild mittig) ist
   drin, greift hier aber nicht (Karte hat echte Kacheln).
   (6) `vita.sh fetch` holt jetzt auch `pmd_red.sav`.
+- 0.1.23 (Mikes `run9`/`run10`): **Einfrieren/Absturz nach ~18 min** = `sceDisplayGetVcount()` zählt 16 Bit (Überlauf alle
+  65536 VBlanks), `FrameLate` rechnete 32 Bit → `WaitDue` wartete ewig (run8 Freeze, run9/10 Watchdog-Absturz). Jetzt
+  Differenz modulo 65536, `WaitDue` max. 8 VBlanks dann Reanchor (`[pace]`-Log). Host `PMD_FRAME_START=n`. Dumps blieben
+  bei 10 % hängen (Ursache unklar; Heap 96 MiB statt 160). **HUD oben links**: Statuszeile + Minikarte (BG0-Zellen in der
+  Schatten-Tilemap 88 px links/40 px hoch umkopiert, Minikarten-Punkte = Prio-0-Sprites; Menüs, die die Statuszeile
+  berühren, lassen alles stehen). **Andocken** unten mit Hysterese (WIN0H-Prüfsumme, 64 Bilder), Blocklücke 24 Zeilen
+  (Namenseingabe sprang). Host `PMD_DOCK=0/1/3`, `PMD_DOCK_LOG`. **Gesundheitswarnung** auf der Vita übersprungen
+  (S05 geladen → Turbo + A bis zur nächsten Bildkarte; Host nur mit `PMD_SKIP_WARNING`; das Warnungs-Skript kommt
+  aus den ROM-Daten, nicht aus `src/data/ground/*.h`).
+- 0.1.22: Textboxen in der Weitsicht unten angedockt (`virtuappu_mode1_ui_map`, Agent D), EU-`banfont` aus der ROM
+  (Umlaute im Banner, `euOnly` in `Port_ChooseFile`), Banner-Etage wie EU („U3“, `Port_FloorText`), `rank_multiplier`,
+  Rahmen: Items/Beutel unten im Rahmen, rechts große Uhr/Bauch/Wetter.
 - 0.1.21 (Mikes Wünsche zu 0.1.20): rechts im Rahmen Wurf-Item (`ITEM_FLAG_SET`, Anzahl summiert) + gehaltenes Item des
   Anführers; Dungeon-Name oben im Rahmen, Etage nur links. **Kangama-Lager** im Port-Menü (`port/port_storage.c`, Regeln
   wie `kangaskhan_storage1.c`; gesperrt: Laden-Ware, klebrig, Poké/benutzte TM, Lager 999, Beutel 20, vor der
