@@ -3,6 +3,7 @@
 #include "run_dungeon.h"
 #ifdef PORT
 #include "port/port_comfort.h"
+#include "port/port_cheats.h"
 #endif
 #include "constants/dungeon.h"
 #include "constants/dungeon_exit.h"
@@ -371,6 +372,9 @@ void RunDungeon_Async(DungeonSetupStruct *setupPtr)
         }
         sub_8068F80();
         sub_8049884();
+#ifdef PORT
+        Port_CheatFloorPrepared(); /* traps_visible, floor_reveal (port/port_cheats.c) */
+#endif
         UpdateTrapsVisibility();
 
         if (!r6) {

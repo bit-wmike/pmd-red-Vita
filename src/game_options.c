@@ -1,6 +1,9 @@
 #include "global.h"
 #include "globaldata.h"
 #include "game_options.h"
+#ifdef PORT
+#include "port/port_cheats.h"
+#endif
 #include "graphics_memory.h"
 #include "data_serializer.h"
 
@@ -197,6 +200,10 @@ void SetWindowBGColor(void)
 
 bool8 GameOptions_ShowMiniMap(void)
 {
+#ifdef PORT
+    if (Port_MapOverlay()) /* map_overlay: the map is always shown */
+        return TRUE;
+#endif
     switch (gGameOptionsRef->mapOption) {
         default:
             return TRUE;

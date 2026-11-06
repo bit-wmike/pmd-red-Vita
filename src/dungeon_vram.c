@@ -2,6 +2,7 @@
 #ifdef PORT
 #include "port/port_view.h"
 #include "port/port_comfort.h"
+#include "port/port_cheats.h"
 #endif
 #include "globaldata.h"
 #include "dungeon_vram.h"
@@ -232,6 +233,9 @@ static void sub_803E490(u32 unused)
     } else {
         IncrementPlayTime(gPlayTimeRef);
         Port_ViewSceneFrame(PORT_SCENE_DUNGEON);
+        /* map_overlay: the map is on the open field (no message log, no
+         * text box, not the full map view) */
+        Port_MapOverlayFrame(gUnknown_202EDD0 == 0 && gShowDungeonMap && !gDungeon->unk181e8.inFloorMapMode);
         WaitForNextFrameAndAdvanceRNG();
         LoadBufferedInputs();
     }

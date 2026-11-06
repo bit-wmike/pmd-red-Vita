@@ -28,6 +28,9 @@
 #include "dungeon_strings.h"
 #include "dungeon_cutscene.h"
 #include "dungeon_portrait_placement.h"
+#ifdef PORT
+#include "port/port_comfort.h"
+#endif
 
 static EWRAM_DATA Entity *sLastLogMsgEntity = NULL;
 static UNUSED EWRAM_DATA u8 sUnused = 0;
@@ -259,6 +262,14 @@ void xxx_draw_string_80524F0(void)
     case 3:
         strPtr->unk1C068++;
         gIwramTextFunc4(0);
+#ifdef PORT
+        /* msg_fast: scroll the message log two pixels per frame (the line
+         * still moves its 11 pixels, in 6 frames instead of 11). */
+        if (Port_MsgFast() && strPtr->unk1C068 <= 10) {
+            strPtr->unk1C068++;
+            gIwramTextFunc4(0);
+        }
+#endif
         if (strPtr->unk1C068 > 10) {
             strPtr->unk1C06C = 2;
         }
@@ -287,8 +298,13 @@ void sub_8052740(s32 a0)
 
     sub_80526D0(a0);
     for (i = 0; i < 240; i++) {
+#ifdef PORT
+        if (strPtr->unk1C064 < Port_MsgWaitThreshold()) /* msg_fast: 30 frames instead of 60 */
+            break;
+#else
         if (strPtr->unk1C064 < 180)
             break;
+#endif
         if ((gRealInputs.held & AB_BUTTONS) == AB_BUTTONS)
             break;
         if (gRealInputs.pressed & JOY_EXCL_DPAD)

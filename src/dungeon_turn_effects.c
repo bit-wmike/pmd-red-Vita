@@ -1,6 +1,7 @@
 #include "global.h"
 #ifdef PORT
 #include "port/port_game.h"
+#include "port/port_cheats.h"
 #endif
 #include "globaldata.h"
 #include "dungeon_turn_effects.h"
@@ -114,6 +115,11 @@ void DoEndOfTurnEffects_Async(Entity *entity)
 
         bellyBefore = entityInfo->belly;
 #ifdef PORT
+        /* belly_slow: half the decrement (48.16 value shifted right by one) */
+        if (Port_CheatBellySlow(modifiedBellyDecrementValue.lo)) {
+            modifiedBellyDecrementValue.lo = (modifiedBellyDecrementValue.lo >> 1) | ((u32)modifiedBellyDecrementValue.hi << 31);
+            modifiedBellyDecrementValue.hi >>= 1;
+        }
         if (!Port_NoHunger())
 #endif
         entityInfo->belly = FixedPoint_Subtract(bellyBefore, FixedPoint_SetFromS48_16(&modifiedBellyDecrementValue));

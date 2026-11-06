@@ -3,6 +3,7 @@
 #include "port/port_config.h"
 #include "port/port_game.h"
 #include "port/port_comfort.h"
+#include "constants/ground_map.h"
 
 int Port_TextInstant(void)
 {
@@ -71,9 +72,12 @@ int Port_DungeonSkipFrameWait(unsigned id)
 
 static int sFloorSavePending;
 
+static int sLastGroundMap = -1;
+
 void Port_FloorStarted(void)
 {
     sFloorSavePending = gPortConfig.floorAutosave != 0;
+    sLastGroundMap = -1;   /* returning from the dungeon enters the base anew */
 }
 
 void Port_FloorInputFrame(void)
@@ -85,4 +89,34 @@ void Port_FloorInputFrame(void)
         return;
     Platform_Log("[qsave] floor autosave\n");
     Port_RequestQuickSave();
+}
+
+/* Ground maps of the team base: outside and inside, one set of six maps
+ * per partner species (include/constants/ground_map.h). */
+#define BASE_MAP_FIRST MAP_TEAM_BASE_PIKACHU_BASIC
+#define BASE_MAP_LAST MAP_TEAM_BASE_INSIDE_TREECKO_FINAL
+
+static int IsBaseMap(int id)
+{
+    return id >= BASE_MAP_FIRST && id <= BASE_MAP_LAST;
+}
+
+void Port_GroundInputFrame(int groundMapId)
+{
+    int entered = IsBaseMap(groundMapId) && !IsBaseMap(sLastGroundMap);
+    sLastGroundMap = groundMapId;
+    if (!entered || !gPortConfig.baseAutosave)
+        return;
+    Platform_Log("[qsave] base autosave (map %d)\n", groundMapId);
+    Port_RequestQuickSave();
+}
+
+int Port_MsgFast(void)
+{
+    return gPortConfig.msgFast != 0;
+}
+
+int Port_MsgWaitThreshold(void)
+{
+    return gPortConfig.msgFast ? 210 : 180;
 }

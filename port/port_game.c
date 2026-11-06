@@ -5,6 +5,7 @@
 #include <stdlib.h>
 #include <stdarg.h>
 #include <string.h>
+#include <stdio.h>
 
 #include "port/port.h"
 #include "port/port_config.h"
@@ -80,6 +81,20 @@ static int sRequest; /* 1 = save, 2 = load */
 static char sStateMessage[96];
 static int sStateMessageFrames;
 
+/* Quick save slots 1..3 (settings.ini save_slot): quicksave1.bin ..
+ * quicksave3.bin. Up to 0.1.19 there was one file, quicksave.bin; slot 1
+ * still loads it until slot 1 is saved for the first time. */
+static int SaveSlot(void)
+{
+    int slot = gPortConfig.saveSlot;
+    return slot < 1 ? 1 : (slot > 3 ? 3 : slot);
+}
+
+static void SlotFile(char *out, size_t size, int slot)
+{
+    snprintf(out, size, "quicksave%d.bin", slot);
+}
+
 static void BuildId(char out[48])
 {
     memset(out, 0, 48);
@@ -88,6 +103,8 @@ static void BuildId(char out[48])
 
 static void DoSave(void)
 {
+    int slot = SaveSlot();
+    char name[32], msg[64];
     unsigned char *ptr[16];
     size_t size[16], total = sizeof(struct StateHeader), n, i, off;
     unsigned char *buf;
@@ -108,15 +125,19 @@ static void DoSave(void)
         memcpy(buf + off, ptr[i], size[i]);
         off += size[i];
     }
-    if (Platform_WriteFile("quicksave.bin", buf, total) == 0)
-        Port_ShowMessage("Schnellspeicherung gesichert");
+    SlotFile(name, sizeof(name), slot);
+    if (Platform_WriteFile(name, buf, total) == 0)
+        snprintf(msg, sizeof(msg), "Schnellspeicherung gesichert (Platz %d)", slot);
     else
-        Port_ShowMessage("Schnellspeicherung fehlgeschlagen");
+        snprintf(msg, sizeof(msg), "Schnellspeicherung fehlgeschlagen (Platz %d)", slot);
+    Port_ShowMessage(msg);
     free(buf);
 }
 
 static void DoLoad(void)
 {
+    int slot = SaveSlot();
+    char name[32], msg[80];
     unsigned char *ptr[16];
     size_t size[16], total = sizeof(struct StateHeader), n, i, off;
     unsigned char *buf;
@@ -129,15 +150,19 @@ static void DoLoad(void)
     buf = (unsigned char *)malloc(total);
     if (!buf)
         return;
-    if (Platform_ReadFile("quicksave.bin", buf, total) != (long)total) {
-        Port_ShowMessage("Keine Schnellspeicherung vorhanden");
+    SlotFile(name, sizeof(name), slot);
+    if (Platform_ReadFile(name, buf, total) != (long)total
+        && (slot != 1 || Platform_ReadFile("quicksave.bin", buf, total) != (long)total)) {
+        snprintf(msg, sizeof(msg), "Keine Schnellspeicherung vorhanden (Platz %d)", slot);
+        Port_ShowMessage(msg);
         free(buf);
         return;
     }
     h = (struct StateHeader *)buf;
     BuildId(build);
     if (h->magic != STATE_MAGIC || memcmp(h->build, build, sizeof(build)) != 0 || h->ramSize != total - sizeof(*h)) {
-        Port_ShowMessage("Schnellspeicherung stammt von einer anderen Version");
+        snprintf(msg, sizeof(msg), "Schnellspeicherung (Platz %d) stammt von einer anderen Version", slot);
+        Port_ShowMessage(msg);
         free(buf);
         return;
     }
@@ -148,7 +173,8 @@ static void DoLoad(void)
     }
     free(buf);
     HostDma_Reset();
-    Port_ShowMessage("Schnellspeicherung geladen");
+    snprintf(msg, sizeof(msg), "Schnellspeicherung geladen (Platz %d)", slot);
+    Port_ShowMessage(msg);
 }
 
 void Port_RequestQuickSave(void)

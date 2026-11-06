@@ -31,4 +31,18 @@ int Port_DungeonSkipFrameWait(unsigned id);
 void Port_FloorStarted(void);
 void Port_FloorInputFrame(void);
 
+/* Base autosave (settings.ini base_autosave): called at every ground frame
+ * in which the player can move, with the ground map's id. The port takes a
+ * quick save at the first such frame after the base (outside or inside the
+ * house) was entered from another map, a dungeon or the title menu. */
+void Port_GroundInputFrame(int groundMapId);
+
+/* Faster dungeon messages (settings.ini msg_fast): 1 = the message log at
+ * the bottom scrolls twice as fast and the game waits half as long after a
+ * message before the next action. */
+int Port_MsgFast(void);
+/* sub_8052740: the game waits until its message timer (240 at the last
+ * line) falls below this value, i.e. 60 frames (msg_fast: 30). */
+int Port_MsgWaitThreshold(void);
+
 #endif

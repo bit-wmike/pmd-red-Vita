@@ -95,6 +95,9 @@ u32 sub_809CDC8(struct GroundLives_Sub120 *strPtr, u32 *r6, s8 *direction, s32 *
         {
             u16 held = gRealInputs.held;
             u16 pressed = gRealInputs.pressed;
+#ifdef PORT
+            Port_GroundInputFrame(GetGroundMapID()); /* base autosave, port/port_comfort.c */
+#endif
             if (held & DPAD_ANY) {
 #ifdef PORT
                 if ((held & B_BUTTON) || Port_WalkFast()) { /* port: always run */

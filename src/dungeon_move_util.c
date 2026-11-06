@@ -1,6 +1,9 @@
 #include "global.h"
 #include "globaldata.h"
 #include "dungeon_move_util.h"
+#ifdef PORT
+#include "port/port_cheats.h"
+#endif
 #include "constants/ability.h"
 #include "constants/iq_skill.h"
 #include "constants/status.h"
@@ -1374,6 +1377,11 @@ void sub_8057588(Entity * pokemon, u8 param_2)
                 }
                 if (((move->moveFlags2 & MOVE_FLAG_SET)) && (move->moveFlags2 &= ~(MOVE_FLAG_SET), param_2 != 0))
                 {
+#ifdef PORT
+                    /* pp_saver: every second use of a team member's move is free */
+                    if (!entityInfo->isNotTeamMember && Port_CheatPpFree(entityInfo->teamIndex, index, move->PP))
+                        PPtoRemove = 0;
+#endif
                     if(PPtoRemove != 0)
                     {
                         PPCounter = PPtoRemove;

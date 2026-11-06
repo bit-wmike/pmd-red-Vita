@@ -250,10 +250,18 @@ s32 GetStackBuyValue(Item *param_1)
 {
     if (param_1->id == ITEM_POKE)
         return GetMoneyValue(param_1);
+#ifdef PORT
+    /* shop_buy_half: the price shown in shop lists */
+    else if (IsThrownItem(param_1->id))
+        return Port_CheatBuyPrice(gItemParametersData[param_1->id].buyPrice * param_1->quantity);
+    else
+        return Port_CheatBuyPrice(gItemParametersData[param_1->id].buyPrice);
+#else
     else if (IsThrownItem(param_1->id))
         return gItemParametersData[param_1->id].buyPrice * param_1->quantity;
     else
         return gItemParametersData[param_1->id].buyPrice;
+#endif
 }
 
 // arm9.bin::02060CE0
@@ -261,10 +269,18 @@ s32 GetStackSellValue(Item *param_1)
 {
     if (param_1->id == ITEM_POKE)
         return GetMoneyValue(param_1);
+#ifdef PORT
+    /* shop_sell_double: the price shown in shop lists */
+    else if (IsThrownItem(param_1->id))
+        return Port_CheatSellPrice(gItemParametersData[param_1->id].sellPrice * param_1->quantity);
+    else
+        return Port_CheatSellPrice(gItemParametersData[param_1->id].sellPrice);
+#else
     else if (IsThrownItem(param_1->id))
         return gItemParametersData[param_1->id].sellPrice * param_1->quantity;
     else
         return gItemParametersData[param_1->id].sellPrice;
+#endif
 }
 
 // arm9.bin::02060C7C
@@ -272,10 +288,18 @@ s32 GetActualBuyPrice(Item *param_1)
 {
     if (!IsShoppableItem(param_1->id))
         return 0;
+#ifdef PORT
+    /* shop_buy_half: what the shops charge (town and dungeon) */
+    else if (IsThrownItem(param_1->id))
+        return Port_CheatBuyPrice(gItemParametersData[param_1->id].buyPrice * param_1->quantity);
+    else
+        return Port_CheatBuyPrice(gItemParametersData[param_1->id].buyPrice);
+#else
     else if (IsThrownItem(param_1->id))
         return gItemParametersData[param_1->id].buyPrice * param_1->quantity;
     else
         return gItemParametersData[param_1->id].buyPrice;
+#endif
 }
 
 // arm9.bin::02060C18
@@ -283,10 +307,18 @@ s32 GetActualSellPrice(Item *param_1)
 {
     if (!IsShoppableItem(param_1->id))
         return 0;
+#ifdef PORT
+    /* shop_sell_double: what the shops pay (town and dungeon) */
+    else if (IsThrownItem(param_1->id))
+        return Port_CheatSellPrice(gItemParametersData[param_1->id].sellPrice * param_1->quantity);
+    else
+        return Port_CheatSellPrice(gItemParametersData[param_1->id].sellPrice);
+#else
     else if (IsThrownItem(param_1->id))
         return gItemParametersData[param_1->id].sellPrice * param_1->quantity;
     else
         return gItemParametersData[param_1->id].sellPrice;
+#endif
 }
 
 // arm9.bin::02060C00

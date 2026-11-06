@@ -92,10 +92,13 @@ void HostDmaSet(int channel, const void *src, void *dst, unsigned int cnt)
     }
 }
 
+void Port_MapOverlayHBlank(void); /* port/port_cheats.c (map_overlay) */
+
 /* One HBlank: every armed HBlank DMA moves one block. */
 void HostDma_HBlank(void)
 {
     int ch;
+    Port_MapOverlayHBlank();
     for (ch = 0; ch < 4; ch++) {
         struct HostHdma *d = &sHdma[ch];
         if (!d->active)
