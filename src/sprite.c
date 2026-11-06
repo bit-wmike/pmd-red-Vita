@@ -4,6 +4,7 @@
 #endif
 #ifdef PORT
 #include "port/port_view.h"
+#include "port/port_assets.h"
 #endif
 #include "globaldata.h"
 #include "bg_palette_buffer.h"
@@ -512,7 +513,10 @@ static void sub_800533C(const ax_pose *const *a0, const ax_sprite *const *a1, ax
     /* only the user's ROM files (the European format) need the pose-end
      * check; the port's own copies end every pose with a marker, and
      * their tables are arrays that must not be read past */
-    const int sPosesInRom = (const unsigned char *)a0 >= gHostRom && (const unsigned char *)a0 < gHostRom + gHostRomSize;
+    /* (since 0.1.19 files with pointers come as heap copies of the ROM
+     * file: those are in the European format as well) */
+    const int sPosesInRom = ((const unsigned char *)a0 >= gHostRom && (const unsigned char *)a0 < gHostRom + gHostRomSize)
+        || Port_RomCopyToRom((const unsigned char *)a0) != NULL;
 #endif
     sCharMemCursor = OBJ_VRAM0 + (a2->vramTileOrMaybeAnimTimer * 0x20);
     for (mem = NULL; (u16)r4->sprite != 0xFFFF || *((u16*)&r4->unk2) != 0xFFFF; r4++, mem = NULL) {

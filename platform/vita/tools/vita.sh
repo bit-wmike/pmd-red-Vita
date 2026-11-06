@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # vita.sh - test data of the PMD Vita port in one step (runs on the Pi).
 #
-#   ./vita.sh fetch <name>   fetch log.txt, log_prev.txt, crumbs.txt, settings.ini,
+#   ./vita.sh fetch <name>   fetch log.txt, log_prev.txt, crumbs.txt, watchdog.txt, settings.ini,
 #                            romindex.bin (size only), the quick save, all core dumps
 #                            (ux0:data/*.psp2dmp) and all screenshots
 #                            (ux0:picture/SCREENSHOT/**) from the Vita into runs/<name>/,
@@ -57,7 +57,7 @@ fetch)
     rm -rf "$out"
     mkdir -p "$out/screenshots" "$out/dumps"
     echo "== Logs"
-    ftp "lcd '$out'; mget -O . $DATA/log.txt $DATA/log_prev.txt $DATA/crumbs.txt $DATA/settings.ini $DATA/quicksave.bin $DATA/pmd_red.sav" || true
+    ftp "lcd '$out'; mget -O . $DATA/log.txt $DATA/log_prev.txt $DATA/crumbs.txt $DATA/watchdog.txt $DATA/settings.ini $DATA/quicksave.bin $DATA/pmd_red.sav" || true
     echo "== Core-Dumps (ux0:data/*.psp2dmp)"
     ftp "lcd '$out/dumps'; mget -O . 'ux0:/data/*.psp2dmp'" 2>/dev/null || true
     echo "== Screenshots (alle Unterordner)"
