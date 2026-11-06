@@ -48,6 +48,17 @@ static struct Field sFields[] = {
     {"stat_spatk", &gPortConfig.statSpAtk, -3, 3},
     {"stat_spdef", &gPortConfig.statSpDef, -3, 3},
     {"stat_speed", &gPortConfig.statSpeed, -3, 3},
+    {"side_panels", &gPortConfig.sidePanels, 0, 1},
+    {"msg_fast", &gPortConfig.msgFast, 0, 1},
+    {"save_slot", &gPortConfig.saveSlot, 1, 3},
+    {"base_autosave", &gPortConfig.baseAutosave, 0, 1},
+    {"map_overlay", &gPortConfig.mapOverlay, 0, 1},
+    {"belly_slow", &gPortConfig.bellySlow, 0, 1},
+    {"traps_visible", &gPortConfig.trapsVisible, 0, 1},
+    {"pp_saver", &gPortConfig.ppSaver, 0, 1},
+    {"shop_buy_half", &gPortConfig.shopBuyHalf, 0, 1},
+    {"shop_sell_double", &gPortConfig.shopSellDouble, 0, 1},
+    {"floor_reveal", &gPortConfig.floorReveal, 0, 1},
 };
 
 void Port_ConfigDefaults(void)
@@ -67,6 +78,8 @@ void Port_ConfigDefaults(void)
     gPortConfig.iqMult = 1;
     gPortConfig.hpBars = 2;
     gPortConfig.slowBlink = 1;
+    gPortConfig.sidePanels = 1;
+    gPortConfig.saveSlot = 1;
 }
 
 void Port_ConfigParse(const char *text)

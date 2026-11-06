@@ -49,6 +49,18 @@ struct PortConfig {
     int recruitBoost;    /* 0 off, 1 +20 %, 2 +50 %: recruitment chance */
     int stairsMarker;    /* 0/1: the stairs are shown on the floor map from the start */
     int statAtk, statDef, statSpAtk, statSpDef, statSpeed; /* -3..+3: team stat modifiers (steps of 10 %) */
+    /* 0.1.20: frame panels, more comfort and soft cheats */
+    int sidePanels;      /* 0/1: clock, status and the floor bar in the frame beside the game (Vita) */
+    int msgFast;         /* 0/1: dungeon messages wait less between lines */
+    int saveSlot;        /* 1..3: quick save slot */
+    int baseAutosave;    /* 0/1: quick save when the base is entered */
+    int mapOverlay;      /* 0/1: the floor map stays shown, semi-transparent, over the dungeon */
+    int bellySlow;       /* 0/1: the belly goes down at half the rate */
+    int trapsVisible;    /* 0/1: traps are visible before they are stepped on */
+    int ppSaver;         /* 0/1: every second use of a move costs no PP */
+    int shopBuyHalf;     /* 0/1: shop prices halved */
+    int shopSellDouble;  /* 0/1: selling gives twice the money */
+    int floorReveal;     /* 0/1: the floor map is revealed on entering a floor */
 };
 
 extern struct PortConfig gPortConfig;

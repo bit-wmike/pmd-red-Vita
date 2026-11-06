@@ -510,9 +510,11 @@ static void ChooseLanguage(void)
 enum {
     MI_H_DISPLAY, MI_STYLE, MI_FRAME, MI_FPS, MI_LANG,
     MI_H_CONTROLS, MI_SQUARE, MI_TRIANGLE, MI_RSTICK, MI_TURBO,
-    MI_H_COMFORT, MI_TEXT_INSTANT, MI_TEXT_AUTO, MI_BLINK, MI_DSPEED, MI_WALK, MI_AUTOSAVE, MI_HPBARS, MI_CLOCK,
-    MI_H_SAVE, MI_QSAVE, MI_QLOAD,
-    MI_H_CHEATS, MI_CH_EXP, MI_CH_MONEY, MI_CH_IQ, MI_CH_RECRUIT, MI_CH_STAIRS, MI_CH_HUNGER,
+    MI_H_COMFORT, MI_TEXT_INSTANT, MI_TEXT_AUTO, MI_BLINK, MI_MSGFAST, MI_DSPEED, MI_WALK, MI_AUTOSAVE, MI_BASESAVE,
+    MI_HPBARS, MI_CLOCK, MI_PANELS, MI_MAPOVL,
+    MI_H_SAVE, MI_SLOT, MI_QSAVE, MI_QLOAD,
+    MI_H_CHEATS, MI_CH_EXP, MI_CH_MONEY, MI_CH_IQ, MI_CH_RECRUIT, MI_CH_STAIRS, MI_CH_HUNGER, MI_CH_BELLY,
+    MI_CH_TRAPS, MI_CH_PP, MI_CH_BUY, MI_CH_SELL, MI_CH_REVEAL,
     MI_CH_ATK, MI_CH_DEF, MI_CH_SPATK, MI_CH_SPDEF, MI_CH_SPEED,
     MI_BACK, MI_COUNT
 };
@@ -568,7 +570,18 @@ static void MenuLine(int item, char *buf, size_t size)
         case MI_WALK: snprintf(buf, size, "Schneller laufen in Basis und Stadt: %s", OnOff(gPortConfig.walkFast)); break;
         case MI_AUTOSAVE: snprintf(buf, size, "Schnellspeichern bei jedem Etagenwechsel: %s", OnOff(gPortConfig.floorAutosave)); break;
         case MI_HPBARS: snprintf(buf, size, "HP-Balken ueber Gegnern: %s", bars[gPortConfig.hpBars]); break;
-        case MI_CLOCK: snprintf(buf, size, "Uhrzeit und Spielzeit im Rand: %s", OnOff(gPortConfig.clockOverlay)); break;
+        case MI_CLOCK: snprintf(buf, size, "Uhrzeit und Spielzeit im Spielbild: %s", OnOff(gPortConfig.clockOverlay)); break;
+        case MI_MSGFAST: snprintf(buf, size, "Dungeon-Meldungen schneller: %s", OnOff(gPortConfig.msgFast)); break;
+        case MI_BASESAVE: snprintf(buf, size, "Schnellspeichern beim Betreten der Basis: %s", OnOff(gPortConfig.baseAutosave)); break;
+        case MI_PANELS: snprintf(buf, size, "Anzeigen im Rahmen (Uhr, Status, Etagen, Missionen): %s", OnOff(gPortConfig.sidePanels)); break;
+        case MI_MAPOVL: snprintf(buf, size, "Karte halbtransparent ueber dem Dungeon: %s", OnOff(gPortConfig.mapOverlay)); break;
+        case MI_SLOT: snprintf(buf, size, "Schnellspeicher-Platz: %d", gPortConfig.saveSlot); break;
+        case MI_CH_BELLY: snprintf(buf, size, "Bauch sinkt halb so schnell: %s", OnOff(gPortConfig.bellySlow)); break;
+        case MI_CH_TRAPS: snprintf(buf, size, "Fallen von Anfang an sichtbar: %s", OnOff(gPortConfig.trapsVisible)); break;
+        case MI_CH_PP: snprintf(buf, size, "AP sparen (jeder 2. Einsatz kostenlos): %s", OnOff(gPortConfig.ppSaver)); break;
+        case MI_CH_BUY: snprintf(buf, size, "Laden: Kaufpreise halbiert: %s", OnOff(gPortConfig.shopBuyHalf)); break;
+        case MI_CH_SELL: snprintf(buf, size, "Laden: Verkaufspreise doppelt: %s", OnOff(gPortConfig.shopSellDouble)); break;
+        case MI_CH_REVEAL: snprintf(buf, size, "Etage beim Betreten aufgedeckt: %s", OnOff(gPortConfig.floorReveal)); break;
         case MI_H_SAVE: snprintf(buf, size, "-- Schnellspeicher --"); break;
         case MI_QSAVE: snprintf(buf, size, "Schnellspeichern"); break;
         case MI_QLOAD: snprintf(buf, size, "Schnellladen"); break;
@@ -623,6 +636,17 @@ static int MenuChange(int item, int d)
         case MI_AUTOSAVE: gPortConfig.floorAutosave ^= 1; break;
         case MI_HPBARS: gPortConfig.hpBars = Wrap(gPortConfig.hpBars, step, 3); break;
         case MI_CLOCK: gPortConfig.clockOverlay ^= 1; break;
+        case MI_MSGFAST: gPortConfig.msgFast ^= 1; break;
+        case MI_BASESAVE: gPortConfig.baseAutosave ^= 1; break;
+        case MI_PANELS: gPortConfig.sidePanels ^= 1; break;
+        case MI_MAPOVL: gPortConfig.mapOverlay ^= 1; break;
+        case MI_SLOT: gPortConfig.saveSlot = 1 + Wrap(gPortConfig.saveSlot - 1, step, 3); break;
+        case MI_CH_BELLY: gPortConfig.bellySlow ^= 1; break;
+        case MI_CH_TRAPS: gPortConfig.trapsVisible ^= 1; break;
+        case MI_CH_PP: gPortConfig.ppSaver ^= 1; break;
+        case MI_CH_BUY: gPortConfig.shopBuyHalf ^= 1; break;
+        case MI_CH_SELL: gPortConfig.shopSellDouble ^= 1; break;
+        case MI_CH_REVEAL: gPortConfig.floorReveal ^= 1; break;
         case MI_CH_EXP: gPortConfig.expMultiplier = 1 + Wrap(gPortConfig.expMultiplier - 1, step, 4); break;
         case MI_CH_MONEY: gPortConfig.moneyMult = 1 + Wrap(gPortConfig.moneyMult - 1, step, 4); break;
         case MI_CH_IQ: gPortConfig.iqMult = 1 + Wrap(gPortConfig.iqMult - 1, step, 4); break;
