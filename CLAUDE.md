@@ -99,7 +99,7 @@ Schalter: `PMD_SHOT=f1,f2` / `PMD_SHOT_EVERY=n` (PPM), `PMD_VIEW=0/1/2`, `PMD_WA
   PPMs** (`cmp`); (2) Renderer-Änderungen Bild für Bild gegen die alte Version vergleichen;
   (3) Vita-Build ohne Fehler.
 
-## Stand (0.1.19, 05.11.2026)
+## Stand (0.1.20, 06.11.2026)
 - 0.1.12 (Mikes `run4`, 0.1.11: Absturz vor dem ersten Dungeon, Titel/Gesundheitshinweis englisch bzw.
   „fehlerhaft“, Tastatur-Müll bei der Namensgebung, Traumtext nicht zentriert): (1) **Absturz**: `lvmp001`
   (Levelkurve, AT-gepackt, 616-Byte-Block mit SIRO-Kopf) wird aus der EU-ROM genommen; `Port_ChooseFile`
@@ -123,6 +123,29 @@ Schalter: `PMD_SHOT=f1,f2` / `PMD_SHOT_EVERY=n` (PPM), `PMD_VIEW=0/1/2`, `PMD_WA
   UI-Ebene (BG0 mit eigenem dx) – Rücksprache mit Mike. `UniformMap` (einfarbige Karten → Bild mittig) ist
   drin, greift hier aber nicht (Karte hat echte Kacheln).
   (6) `vita.sh fetch` holt jetzt auch `pmd_red.sav`.
+- 0.1.20 (Mikes `run8`, 0.1.19: Render ~6 ms statt 11,5, catchup 0; Quiz-Ergebnis teils englisch, Fragment links unter
+  Textboxen, Dungeon-Name englisch, Etagen-Banner zu kurz, Weltkarte voller Müll-Sprites, Hänger im Dungeon nach
+  Annahme von Jobs, Start viel langsamer als die anderen Ports). Fünf Agenten:
+  (1) **Start**: `romindex.bin` (Zustand + ROM-Adresse je Block, Archiv-Offsets, SHA-1; Schlüssel `FastTableHash` +
+  `RomFingerprint` = Größe/Header/512 B alle 64 KiB) → spätere Starts kopieren nur; kein SHA-1 pro Start mehr, 4-s-Hinweis
+  nur nach Neusuche; `textindex.bin` gepackt (TIDC, 2,4 MiB); `[start]`-Logzeilen. Recherche: nur pokeruby braucht keine
+  ROM (Decomp vollständig); mzm/TMC lesen die ROM und kopieren ohne Suche. ROM lesen (~1,5–3 s) bleibt der größte Posten.
+  (2) **Geparkte OAM-Slots** (0,160) aus `CopySpritesToOam` → `Port_OamSlot(slot,-1)` setzt `sSlotFrame=0` (vorher ein Bild
+  lang mit alter Basis gezeichnet = Fragment links unten bei jedem Cursor-Blinken). `PMD_UIOFF_LOG=1` (Host).
+  (3) **Lange Pool-Einträge** (Breite ≥ 256: Byte vor dem Text ≠ 0) als Stringanfang (`PoolText`), 6 Quiz-Ergebnisse;
+  `TEXT_INDEX_FORMAT` 3. (4) **Banner**: `GetDungeonName2` über Port_Text, EU-Bannerfont hat Ein-Byte-Glyphen ≥ 0x80
+  (`BannerHasGlyph`), Banner 75 Bilder gehalten (GBA zeigt es während der Etagen-Erzeugung). Etagenformat der EU: DE „U3“.
+  (5) **Weltkarte**: EU-Posen-Ende auch für Heap-Kopien (`Port_RomCopyToRom`) – sonst lief `sub_800533C` hinter `wmapspr`
+  durch den Heap (ASan). Skripte `save_run8_worldmap.txt`/`save_run8_dungeon.txt` (Mikes run8-Spielstand, PMD_CFG mit
+  Mikes Werten). Hänger auf dem Host nicht reproduziert (44 Läufe + konvertierte Vita-Schnellspeicherung,
+  Scratchpad `agentW/qconv.py`) → **Watchdog** in main_vita.c: 30 s ohne Spielbild → `watchdog.txt` + erzwungener Dump.
+  (6) **Komfort/Cheats** (alle aus): `msg_fast`, `save_slot` 1–3 (`quicksave1..3.bin`), `base_autosave`, `map_overlay`
+  (Karte immer an, BG0 halbtransparent ab Zeile 8 via `Port_MapOverlayHBlank`), `belly_slow`, `traps_visible`, `pp_saver`,
+  `shop_buy_half`/`shop_sell_double` (ungetestet im Laden), `floor_reveal`. (7) **Rahmen-Anzeigen** (`port/port_panel.c`,
+  nur Pixelgenau mit ≥ 44 px Rand): rechts Uhr, Spielzeit, Bauch, Wetter, Beutel n/20; oben Dungeon-Name; links
+  Etagenleiste mit Job-Markierungen (Jobs `gUnknown_203B490->jobSlots`, mailType 6 aktiv, 5 inaktiv, 8 erfüllt, 7/9 erledigt);
+  kurzes Tippen links = Job-Übersicht (pausiert). Host `PMD_PANEL_LOG`, `PMD_PANEL_TESTJOBS`.
+  ELFs gzip im Daten-Repo `builds/`. Armhost-Binärdatei heißt `pmd_armhost`.
 - 0.1.19 (Mikes `run7`, gespielt mit 0.1.17: Absturz nach dem Brief = Weltkarten-Absturz, in 0.1.18 behoben – Crumbs
   `op af/a9/04/ef` + `wmp2cani` wie reproduziert; Level-up-Zeile des Spielers englisch; Textbox im Haus unten mit
   schwarzem Streifen; gelbes Quadrat links unter der Quiz-Textbox; Cursor blinken zu schnell; hohe CPU-Last):
