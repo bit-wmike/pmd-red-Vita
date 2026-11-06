@@ -64,7 +64,7 @@ int Port_CrumbText(char *buf, int size)
     int n = 0;
     for (i = from; i < sCrumbNext && n < size - 1; i++)
         n += snprintf(buf + n, size - n, "%s\n", sCrumbs[i % CRUMB_COUNT]);
-    return n;
+    return n < size ? n : size - 1; /* snprintf counts what did not fit */
 }
 
 /* ------------------------------------------------------ quick save/load */

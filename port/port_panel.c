@@ -234,6 +234,11 @@ static void FloorText(char *out, int size, int dungeon, int floor)
     }
 }
 
+void Port_FloorText(char *out, int size, int dungeon, int floor)
+{
+    FloorText(out, size, dungeon, floor);
+}
+
 /* ---- data ------------------------------------------------------------- */
 
 /* The item in the team's bag. For a delivery the game skips shop items

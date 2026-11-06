@@ -99,4 +99,8 @@ void Port_PanelTimeOfDay(int *hour, int *minute);
  * so the overlay leaves its small clock out of the image. */
 extern int gPortPanelsVisible;
 
+/* The floor as the European ROM writes it in the chosen language
+ * ("U3" in German, "B3F" in English). */
+void Port_FloorText(char *out, int size, int dungeon, int floor);
+
 #endif /* PORT_PANEL_H */

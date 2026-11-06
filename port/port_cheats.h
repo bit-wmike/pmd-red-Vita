@@ -15,6 +15,8 @@ int Port_NoHunger(void);
 
 /* Money found in dungeons / mission rewards (money_multiplier 1..4). */
 int Port_CheatMoney(int amount);
+/* Rescue points of a job reward times rank_multiplier (1..4). */
+int Port_CheatRankPts(int points);
 /* IQ gained from a gummi (iq_multiplier 1..4); the caller caps at 999. */
 int Port_CheatIq(int boost);
 /* Recruitment rate in 1/1000 after the game's own bonuses (recruit_boost). */

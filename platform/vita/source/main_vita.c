@@ -60,7 +60,9 @@
 #define KEY_L 0x200
 
 unsigned int sceUserMainThreadStackSize = 1 * 1024 * 1024;
-int _newlib_heap_size_user = 160 * 1024 * 1024;
+/* 96 MiB: the game needs ~55 (ROM 32, text index, file copies); a smaller
+ * process also keeps the core dump small enough to be written */
+int _newlib_heap_size_user = 96 * 1024 * 1024;
 
 /* ---------------------------------------------------------------- log */
 
@@ -375,73 +377,85 @@ static void DrawCheck(float x, float y, float s, unsigned color)
     }
 }
 
-/* An item block of the right panel: label, the name in up to two lines
- * (scaled down when a word is too long), the count; returns the next y. */
-static int DrawItemBlock(float x, float w, int y, const char *label, int item, const char *name, int count,
-                         int sticky)
-{
-    char buf[16];
-    PanelText(x, w, y, PANEL_DIM, 0.6f, label);
-    y += 16;
-    if (!item) {
-        PanelText(x, w, y, PANEL_DIM, 0.7f, "-");
-        return y + 22;
-    }
-    y = PanelWrap(x, w, y, sticky ? PANEL_OPEN : PANEL_TEXT, 0.55f, 13, name, 2);
-    if (count > 0) {
-        snprintf(buf, sizeof(buf), "x%d", count);
-        PanelText(x, w, y + 2, PANEL_ITEM, 0.75f, buf);
-        y += 18;
-    }
-    return y + 10;
-}
-
 static void DrawRightPanel(const struct PortPanel *p, float x, float w)
 {
     char buf[48];
-    int y = 30;
+    int y = 34;
     vita2d_draw_rectangle(x + 3, 4, w - 6, 536, PANEL_BG);
     x += 3;
     w -= 6;
-    PanelText(x, w, y, PANEL_TEXT, 1.05f, p->clock);
-    y += 18;
-    PanelText(x, w, y, PANEL_DIM, 0.7f, p->playTime);
-    y += 24;
+    PanelText(x, w, y, PANEL_TEXT, 1.2f, p->clock);
+    y += 22;
+    PanelText(x, w, y, PANEL_DIM, 0.85f, p->playTime);
+    y += 30;
     if (p->inDungeon) {
         /* the dungeon's name is in the frame above the game, the floor in
-         * the floor bar on the left (Mike) */
-        vita2d_draw_rectangle(x + 4, y - 10, w - 8, 1, PANEL_DIM);
+         * the floor bar on the left, the items in the frame below (Mike:
+         * the narrow side frames need large text on the Vita's screen) */
+        vita2d_draw_rectangle(x + 4, y - 12, w - 8, 1, PANEL_DIM);
         y += 8;
         if (p->maxBelly > 0) {
-            PanelText(x, w, y, PANEL_DIM, 0.6f, "Bauch");
-            y += 17;
-            snprintf(buf, sizeof(buf), "%d/%d", p->belly, p->maxBelly);
-            PanelText(x, w, y, p->belly * 5 <= p->maxBelly ? PANEL_OPEN : PANEL_TEXT, 0.8f, buf);
-            y += 26;
+            PanelText(x, w, y, PANEL_DIM, 0.8f, "Bauch");
+            y += 22;
+            snprintf(buf, sizeof(buf), "%d", p->belly);
+            PanelText(x, w, y, p->belly * 5 <= p->maxBelly ? PANEL_OPEN : PANEL_TEXT, 1.2f, buf);
+            y += 18;
+            snprintf(buf, sizeof(buf), "/%d", p->maxBelly);
+            PanelText(x, w, y, PANEL_DIM, 0.8f, buf);
+            y += 32;
         }
         if (p->weather[0]) {
-            PanelText(x, w, y, PANEL_DIM, 0.6f, "Wetter");
-            y += 17;
-            PanelText(x, w, y, PANEL_TEXT, 0.7f, p->weather);
-            y += 26;
+            PanelText(x, w, y, PANEL_DIM, 0.8f, "Wetter");
+            y += 22;
+            PanelText(x, w, y, PANEL_TEXT, 0.9f, p->weather);
+            y += 30;
         }
-    } else {
-        y += 8;
     }
-    /* the item set for L+R (Square) with what is left of it in the bag, and
-     * the leader's held item (Mike: in the right frame, above the bag) */
-    vita2d_draw_rectangle(x + 4, y - 10, w - 8, 1, PANEL_DIM);
-    y += 8;
-    y = DrawItemBlock(x, w, y, "Werfen", p->setItem, p->setName, p->setCount, p->setSticky);
-    y = DrawItemBlock(x, w, y, "Gehalten", p->heldItem, p->heldName, p->heldCount, p->heldSticky);
-    vita2d_draw_rectangle(x + 4, y - 10, w - 8, 1, PANEL_DIM);
-    y += 8;
-    /* the bag instead of the money (Mike: the bag is what needs managing) */
-    PanelText(x, w, y, PANEL_DIM, 0.6f, "Beutel");
-    y += 17;
-    snprintf(buf, sizeof(buf), "%d/%d", p->bagCount, p->bagMax);
-    PanelText(x, w, y, p->bagCount >= p->bagMax ? PANEL_OPEN : p->bagCount >= p->bagMax - 2 ? PANEL_HEAD : PANEL_TEXT,
-              0.8f, buf);
+}
+
+/* One row in the frame below the game: throw item (L+R) with what is left
+ * of it in the bag, the leader's held item and the bag's fill, each as a
+ * dim label and a bright value, centred and scaled to the width. */
+static void DrawBottomBar(const struct PortPanel *p)
+{
+    char vals[3][64];
+    const char *labels[3] = {"Werfen ", "Gehalten ", "Beutel "};
+    unsigned colors[3];
+    float y0 = sGameY + sGameH, h = 544.0f - y0, scale = 1.0f, total = 0, x;
+    int k, gap;
+    if (h < 20)
+        return;
+    if (p->setItem > 0)
+        snprintf(vals[0], sizeof(vals[0]), p->setCount > 1 ? "%s x%d" : "%s", p->setName, p->setCount);
+    else
+        snprintf(vals[0], sizeof(vals[0]), "-");
+    if (p->heldItem > 0)
+        snprintf(vals[1], sizeof(vals[1]), p->heldCount > 1 ? "%s x%d" : "%s", p->heldName, p->heldCount);
+    else
+        snprintf(vals[1], sizeof(vals[1]), "-");
+    snprintf(vals[2], sizeof(vals[2]), "%d/%d", p->bagCount, p->bagMax);
+    colors[0] = p->setSticky ? PANEL_OPEN : PANEL_TEXT;
+    colors[1] = p->heldSticky ? PANEL_OPEN : PANEL_TEXT;
+    colors[2] = p->bagCount >= p->bagMax ? PANEL_OPEN : p->bagCount >= p->bagMax - 2 ? PANEL_HEAD : PANEL_TEXT;
+    for (;;) {
+        gap = (int)(36 * scale);
+        total = 0;
+        for (k = 0; k < 3; k++)
+            total += vita2d_pgf_text_width(sFont, scale, labels[k]) + vita2d_pgf_text_width(sFont, scale, vals[k]);
+        total += 2 * gap;
+        if (total <= sGameW - 16 || scale <= 0.6f)
+            break;
+        scale -= 0.05f;
+    }
+    vita2d_draw_rectangle(sGameX + (sGameW - total) / 2 - 12, y0 + 3, total + 24, h - 6, PANEL_BG);
+    x = sGameX + (sGameW - total) / 2;
+    for (k = 0; k < 3; k++) {
+        int base = (int)(y0 + h / 2 + 8 * scale);
+        vita2d_pgf_draw_text(sFont, (int)x, base, PANEL_DIM, scale, labels[k]);
+        x += vita2d_pgf_text_width(sFont, scale, labels[k]);
+        vita2d_pgf_draw_text(sFont, (int)x, base, colors[k], scale, vals[k]);
+        x += vita2d_pgf_text_width(sFont, scale, vals[k]) + gap;
+    }
 }
 
 /* The marks of floors first..last (hidden by the floor window) as one
@@ -612,6 +626,7 @@ static void DrawPanels(void)
         return;
     DrawLeftPanel(p, 0, left);
     DrawRightPanel(p, sGameX + sGameW, right);
+    DrawBottomBar(p);
     if (p->inDungeon && p->dungeonName[0] && sGameY >= 20) {
         /* the dungeon's name centred in the frame above the game (room for
          * the long names of later dungeons) */
@@ -857,7 +872,7 @@ enum {
     MI_H_COMFORT, MI_TEXT_INSTANT, MI_TEXT_AUTO, MI_BLINK, MI_MSGFAST, MI_DSPEED, MI_WALK, MI_AUTOSAVE, MI_BASESAVE,
     MI_HPBARS, MI_CLOCK, MI_PANELS, MI_MAPOVL, MI_STORAGE,
     MI_H_SAVE, MI_SLOT, MI_QSAVE, MI_QLOAD,
-    MI_H_CHEATS, MI_CH_EXP, MI_CH_MONEY, MI_CH_IQ, MI_CH_RECRUIT, MI_CH_STAIRS, MI_CH_HUNGER, MI_CH_BELLY,
+    MI_H_CHEATS, MI_CH_EXP, MI_CH_MONEY, MI_CH_RANK, MI_CH_IQ, MI_CH_RECRUIT, MI_CH_STAIRS, MI_CH_HUNGER, MI_CH_BELLY,
     MI_CH_TRAPS, MI_CH_PP, MI_CH_BUY, MI_CH_SELL, MI_CH_REVEAL,
     MI_CH_ATK, MI_CH_DEF, MI_CH_SPATK, MI_CH_SPDEF, MI_CH_SPEED,
     MI_BACK, MI_COUNT
@@ -933,6 +948,7 @@ static void MenuLine(int item, char *buf, size_t size)
         case MI_H_CHEATS: snprintf(buf, size, "-- Sanfte Cheats --"); break;
         case MI_CH_EXP: snprintf(buf, size, "Erfahrung x%d", gPortConfig.expMultiplier); break;
         case MI_CH_MONEY: snprintf(buf, size, "Geld x%d", gPortConfig.moneyMult); break;
+        case MI_CH_RANK: snprintf(buf, size, "Rettungspunkte x%d", gPortConfig.rankMult); break;
         case MI_CH_IQ: snprintf(buf, size, "IQ x%d", gPortConfig.iqMult); break;
         case MI_CH_RECRUIT: snprintf(buf, size, "Rekrutierungschance: %s", recruit[gPortConfig.recruitBoost]); break;
         case MI_CH_STAIRS: snprintf(buf, size, "Treppe auf der Karte markiert: %s", OnOff(gPortConfig.stairsMarker)); break;
@@ -994,6 +1010,7 @@ static int MenuChange(int item, int d)
         case MI_CH_REVEAL: gPortConfig.floorReveal ^= 1; break;
         case MI_CH_EXP: gPortConfig.expMultiplier = 1 + Wrap(gPortConfig.expMultiplier - 1, step, 4); break;
         case MI_CH_MONEY: gPortConfig.moneyMult = 1 + Wrap(gPortConfig.moneyMult - 1, step, 4); break;
+        case MI_CH_RANK: gPortConfig.rankMult = 1 + Wrap(gPortConfig.rankMult - 1, step, 4); break;
         case MI_CH_IQ: gPortConfig.iqMult = 1 + Wrap(gPortConfig.iqMult - 1, step, 4); break;
         case MI_CH_RECRUIT: gPortConfig.recruitBoost = Wrap(gPortConfig.recruitBoost, step, 3); break;
         case MI_CH_STAIRS: gPortConfig.stairsMarker ^= 1; break;

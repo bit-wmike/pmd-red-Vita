@@ -334,7 +334,11 @@ static void MR_InitStateDialogue(void)
             }
             else {
                 sMRWork->currTeamRank = GetRescueTeamRank();
+#ifdef PORT
+                AddToTeamRankPts(Port_CheatRankPts(sMRWork->rewards->teamRankPtsReward));
+#else
                 AddToTeamRankPts(sMRWork->rewards->teamRankPtsReward);
+#endif
                 PlaySound(203);
 
                 if (sMRWork->currTeamRank != GetRescueTeamRank())
@@ -342,7 +346,11 @@ static void MR_InitStateDialogue(void)
                 else
                     sMRWork->nextState = MR_STATE_REWARD_EXIT;
 
+#ifdef PORT
+                gFormatArgs[0] = Port_CheatRankPts(sMRWork->rewards->teamRankPtsReward);
+#else
                 gFormatArgs[0] = sMRWork->rewards->teamRankPtsReward;
+#endif
                 CreateDialogueBoxAndPortrait(gUnknown_80E0670, 0, 0, 0x101);
             }
             break;

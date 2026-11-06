@@ -59,6 +59,7 @@ static struct Field sFields[] = {
     {"shop_buy_half", &gPortConfig.shopBuyHalf, 0, 1},
     {"shop_sell_double", &gPortConfig.shopSellDouble, 0, 1},
     {"floor_reveal", &gPortConfig.floorReveal, 0, 1},
+    {"rank_multiplier", &gPortConfig.rankMult, 1, 4},
 };
 
 void Port_ConfigDefaults(void)
@@ -80,6 +81,7 @@ void Port_ConfigDefaults(void)
     gPortConfig.slowBlink = 1;
     gPortConfig.sidePanels = 1;
     gPortConfig.saveSlot = 1;
+    gPortConfig.rankMult = 1;
 }
 
 void Port_ConfigParse(const char *text)

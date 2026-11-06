@@ -61,6 +61,7 @@ struct PortConfig {
     int shopBuyHalf;     /* 0/1: shop prices halved */
     int shopSellDouble;  /* 0/1: selling gives twice the money */
     int floorReveal;     /* 0/1: the floor map is revealed on entering a floor */
+    int rankMult;        /* 1..4: rescue points from jobs */
 };
 
 extern struct PortConfig gPortConfig;

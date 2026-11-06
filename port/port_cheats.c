@@ -55,6 +55,15 @@ int Port_NoHunger(void)
     return gPortConfig.noHunger;
 }
 
+int Port_CheatRankPts(int points)
+{
+    int m = Clamp(gPortConfig.rankMult, 1, 4);
+    if (m == 1 || points <= 0)
+        return points;
+    CHEAT_LOG("cheat: rescue points %d -> %d (x%d)\n", points, points * m, m);
+    return points * m;
+}
+
 int Port_CheatMoney(int amount)
 {
     int m = Clamp(gPortConfig.moneyMult, 1, 4);

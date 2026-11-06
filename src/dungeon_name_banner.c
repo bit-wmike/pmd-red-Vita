@@ -35,6 +35,7 @@ static void sub_803DD30(u8 *a0, u32 *a1);
 
 #ifdef PORT
 #include "port/port_text.h"
+#include "port/port_panel.h"
 /* The European banner font has single-byte glyphs for accented letters
  * (ö, ü ...); the US code reads every byte >= 0x80 as the first of a
  * two-byte (Japanese) code. A byte the font has is one character. */
@@ -107,12 +108,17 @@ void ShowDungeonNameBanner_Async(void)
         else
             stairsStr = "B";
 
+#ifdef PORT
+        /* the floor as the European version writes it ("U3" in German) */
+        Port_FloorText((char *)text, sizeof(text), gDungeon->unk644.dungeonLocation.id, currFloor);
+#else
         if (currFloor > 9) {
             sprintfStatic(text, "%s%c%cF", stairsStr, '0' + (currFloor / 10), '0' + (currFloor % 10));
         }
         else {
             sprintfStatic(text, "%s%cF", stairsStr, '0' + currFloor);
         }
+#endif
 
         DisplayStringOnScreen(text, (224 - CalcStringWidth(text)) / 2, y + 32);
         gUnknown_20274A5 = TRUE;
